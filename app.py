@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
@@ -16,7 +21,7 @@ ARTIKLAR_FILE = "laso_invest_artiklar.csv"
 OFFERTER_FILE = "laso_invest_offerter.csv"
 LOGO_FILE = "logo.png"
 
-# Ladda eller skapa data
+# --- LADDA & SPARA DATA ---
 def load_data(file_path, columns):
     if os.path.exists(file_path):
         try:
@@ -30,7 +35,7 @@ def load_data(file_path, columns):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False)
 
-# Skapa standardartiklar om filen saknas
+# Initiera filer om de saknas
 if not os.path.exists(ARTIKLAR_FILE):
     df_artiklar = pd.DataFrame([
         {"Artikel": "Traktortimmar - Lundberg 343", "Enhet": "tim", "A-pris": 850.0},
@@ -41,14 +46,13 @@ if not os.path.exists(ARTIKLAR_FILE):
 else:
     df_artiklar = load_data(ARTIKLAR_FILE, ["Artikel", "Enhet", "A-pris"])
 
-df_fakturor = load_data(DATA_FILE, ["Fakturanummer", "Kund", "Datum", "Projekt", "Artiklar_JSON", "Totalt"])
-df_offerter = load_data(OFFERTER_FILE, ["Offertnummer", "Kund", "Datum", "Giltig_till", "Projekt", "Artiklar_JSON", "Totalt", "Villkor"])
+df_fakturor = load_data(DATA_FILE, ["Fakturanummer", "Kund", "E-post", "Datum", "Projekt", "Artiklar_JSON", "Totalt"])
+df_offerter = load_data(OFFERTER_FILE, ["Offertnummer", "Kund", "E-post", "Datum", "Giltig_till", "Projekt", "Artiklar_JSON", "Totalt", "Villkor"])
 
-# Hjälpfunktion för att säkert hämta pris/enhet
+# Säker hämtning av artikelinfo
 def get_article_info(df, article_name):
     if df.empty or "Artikel" not in df.columns:
         return 0.0, "st"
-    
     selected = df[df["Artikel"] == article_name]
     if selected.empty:
         return 0.0, "st"
@@ -68,14 +72,13 @@ def get_article_info(df, article_name):
 
     return pris, enhet
 
-# Funktion för PDF-generering
+# --- PDF GENERERING ---
 def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, totalt, villkor=""):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor("#0f2a4a"))
     normal_style = styles['Normal']
     bold_style = ParagraphStyle('BoldText', parent=normal_style, fontName='Helvetica-Bold')
 
@@ -111,7 +114,7 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
     for item in items:
         table_data.append([
             item["Artikel"],
-            f"{item['Antal']}",
+            f"{int(item['Antal'])}", # Hela enheter/timmar
             item["Enhet"],
             f"{item['A-pris']:.2f}",
             f"{item['Summa']:.2f}"
@@ -140,7 +143,40 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
     buffer.seek(0)
     return buffer
 
-# --- APP LAYOUT ---
+# --- FUNKTION FÖR E-POST ---
+def send_email_with_pdf(to_email, subject, body, pdf_buffer, filename):
+    smtp_server = st.secrets.get("SMTP_SERVER", "")
+    smtp_port = st.secrets.get("SMTP_PORT", 587)
+    smtp_user = st.secrets.get("SMTP_USER", "")
+    smtp_pass = st.secrets.get("SMTP_PASSWORD", "")
+
+    if not smtp_server or not smtp_user:
+        st.error("E-postinställningar saknas i Streamlit Secrets (SMTP)!")
+        return False
+
+    msg = MIMEMultipart()
+    msg['From'] = smtp_user
+    msg['To'] = to_email
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    attachment = MIMEApplication(pdf_buffer.getvalue(), Name=filename)
+    attachment['Content-Disposition'] = f'attachment; filename="{filename}"'
+    msg.attach(attachment)
+
+    try:
+        server = smtplib.SMTP(smtp_server, int(smtp_port))
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Kunde inte skicka e-post: {e}")
+        return False
+
+# --- UI APP LAYOUT ---
 st.title("🚜 Laso Invest AB - System")
 
 tab1, tab2, tab3 = st.tabs(["📄 Fakturaunderlag", "📋 Skapa Offert", "⚙️ Artikelregister"])
@@ -150,12 +186,14 @@ artiklar_lista = df_artiklar["Artikel"].tolist() if "Artikel" in df_artiklar.col
 # --- FLIK 1: FAKTURUNDERLAG ---
 with tab1:
     st.header("Nytt Fakturaunderlag")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         f_kund = st.text_input("Kundnamn", key="f_kund")
     with col2:
-        f_nr = st.text_input("Fakturanummer / Referens", value=f"F-{datetime.now().strftime('%Y%m%d%H%M')}", key="f_nr")
+        f_email = st.text_input("Kundens E-post", key="f_email")
     with col3:
+        f_nr = st.text_input("Fakturanummer / Referens", value=f"F-{datetime.now().strftime('%Y%m%d%H%M')}", key="f_nr")
+    with col4:
         f_datum = st.date_input("Datum", key="f_datum")
 
     f_projekt = st.text_input("Projekt / Anmärkning", key="f_projekt")
@@ -176,7 +214,7 @@ with tab1:
             art = st.selectbox(f"Artikel #{i+1}", artiklar_lista, key=f"f_art_{i}")
             default_pris, default_enhet = get_article_info(df_artiklar, art)
         with c2:
-            antal = st.number_input("Antal", min_value=1, value=int(row["Antal"]), step=1, key=f"f_ant_{i}")
+            antal = st.number_input("Antal (hela timmar/st)", min_value=1, value=int(row["Antal"]), step=1, key=f"f_ant_{i}")
         with c3:
             enhet = st.text_input("Enhet", value=default_enhet, key=f"f_enh_{i}")
         with c4:
@@ -185,29 +223,57 @@ with tab1:
             summa = antal * pris
             st.text_input("Summa", value=f"{summa:.2f} kr", disabled=True, key=f"f_sum_{i}")
             f_totalt += summa
-            f_items.append({"Artikel": art, "Antal": antal, "Enhet": enhet, "A-pris": pris, "Summa": summa})
+            f_items.append({"Artikel": art, "Antal": int(antal), "Enhet": enhet, "A-pris": pris, "Summa": summa})
 
     st.button("➕ Lägg till rad", on_click=add_f_row, key="add_f")
     st.markdown(f"### Totalsumma: **{f_totalt:.2f} kr** exkl. moms")
 
-    if st.button("Generera Faktunderlag (PDF)", type="primary"):
-        if not f_kund:
-            st.error("Mata in kundnamn!")
-        else:
-            pdf_buf = generate_pdf("Fakturaunderlag", f_nr, f_kund, str(f_datum), "", f_projekt, f_items, f_totalt)
-            st.download_button("💾 Ladda ner Faktunderlag-PDF", data=pdf_buf, file_name=f"Fakturaunderlag_{f_nr}.pdf", mime="application/pdf")
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    
+    with col_btn1:
+        if st.button("💾 Spara Fakturaunderlag", type="primary", use_container_width=True):
+            if not f_kund:
+                st.error("Mata in kundnamn!")
+            else:
+                new_row = {
+                    "Fakturanummer": f_nr,
+                    "Kund": f_kund,
+                    "E-post": f_email,
+                    "Datum": str(f_datum),
+                    "Projekt": f_projekt,
+                    "Artiklar_JSON": json.dumps(f_items),
+                    "Totalt": f_totalt
+                }
+                df_fakturor = pd.concat([df_fakturor, pd.DataFrame([new_row])], ignore_index=True)
+                save_data(df_fakturor, DATA_FILE)
+                st.success(f"Fakturaunderlag {f_nr} har sparats i databasen!")
+
+    with col_btn2:
+        pdf_buf = generate_pdf("Fakturaunderlag", f_nr, f_kund, str(f_datum), "", f_projekt, f_items, f_totalt)
+        st.download_button("📥 Ladda ner PDF", data=pdf_buf, file_name=f"Fakturaunderlag_{f_nr}.pdf", mime="application/pdf", use_container_width=True)
+
+    with col_btn3:
+        if st.button("📧 Skicka via E-post", use_container_width=True):
+            if not f_email:
+                st.error("Mata in kundens e-postadress ovan först!")
+            else:
+                body_text = f"Hej {f_kund},\n\nHär kommer fakturaunderlag {f_nr} gällande {f_projekt}.\n\nMed vänlig hälsning,\nLaso Invest AB"
+                if send_email_with_pdf(f_email, f"Fakturaunderlag {f_nr} - Laso Invest AB", body_text, pdf_buf, f"Fakturaunderlag_{f_nr}.pdf"):
+                    st.success(f"E-post skickad till {f_email}!")
 
 # --- FLIK 2: SKAPA OFFERT ---
 with tab2:
     st.header("Skapa Ny Offert")
-    o_col1, o_col2, o_col3, o_col4 = st.columns(4)
+    o_col1, o_col2, o_col3, o_col4, o_col5 = st.columns(5)
     with o_col1:
         o_kund = st.text_input("Kundnamn", key="o_kund")
     with o_col2:
-        o_nr = st.text_input("Offertnummer", value=f"OFF-{datetime.now().strftime('%Y%m%d%H%M')}", key="o_nr")
+        o_email = st.text_input("Kundens E-post", key="o_email")
     with o_col3:
-        o_datum = st.date_input("Offertdatum", key="o_datum")
+        o_nr = st.text_input("Offertnummer", value=f"OFF-{datetime.now().strftime('%Y%m%d%H%M')}", key="o_nr")
     with o_col4:
+        o_datum = st.date_input("Offertdatum", key="o_datum")
+    with o_col5:
         o_giltig = st.date_input("Giltig t.o.m", value=datetime.now() + timedelta(days=30), key="o_giltig")
 
     o_projekt = st.text_input("Projektnamn / Uppdragsbeskrivning", key="o_projekt")
@@ -228,7 +294,7 @@ with tab2:
             o_art = st.selectbox(f"Artikel #{i+1}", artiklar_lista, key=f"o_art_{i}")
             o_default_pris, o_default_enhet = get_article_info(df_artiklar, o_art)
         with oc2:
-            o_antal = st.number_input("Antal", min_value=1, value=int(row["Antal"]), step=1, key=f"o_ant_{i}")
+            o_antal = st.number_input("Antal (hela timmar/st)", min_value=1, value=int(row["Antal"]), step=1, key=f"o_ant_{i}")
         with oc3:
             o_enhet = st.text_input("Enhet", value=o_default_enhet, key=f"o_enh_{i}")
         with oc4:
@@ -237,7 +303,7 @@ with tab2:
             o_summa = o_antal * o_pris
             st.text_input("Summa", value=f"{o_summa:.2f} kr", disabled=True, key=f"o_sum_{i}")
             o_totalt += o_summa
-            o_items.append({"Artikel": o_art, "Antal": o_antal, "Enhet": o_enhet, "A-pris": o_pris, "Summa": o_summa})
+            o_items.append({"Artikel": o_art, "Antal": int(o_antal), "Enhet": o_enhet, "A-pris": o_pris, "Summa": o_summa})
 
     st.button("➕ Lägg till rad", on_click=add_o_row, key="add_o")
     
@@ -245,12 +311,40 @@ with tab2:
 
     st.markdown(f"### Beräknat Offertvärde: **{o_totalt:.2f} kr** exkl. moms")
 
-    if st.button("Generera Offert (PDF)", type="primary"):
-        if not o_kund:
-            st.error("Mata in kundnamn!")
-        else:
-            pdf_offert = generate_pdf("Offert", o_nr, o_kund, str(o_datum), str(o_giltig), o_projekt, o_items, o_totalt, o_villkor)
-            st.download_button("💾 Ladda ner Offert-PDF", data=pdf_offert, file_name=f"Offert_{o_nr}.pdf", mime="application/pdf")
+    col_obtn1, col_obtn2, col_obtn3 = st.columns(3)
+
+    with col_obtn1:
+        if st.button("💾 Spara Offert", type="primary", use_container_width=True):
+            if not o_kund:
+                st.error("Mata in kundnamn!")
+            else:
+                o_new_row = {
+                    "Offertnummer": o_nr,
+                    "Kund": o_kund,
+                    "E-post": o_email,
+                    "Datum": str(o_datum),
+                    "Giltig_till": str(o_giltig),
+                    "Projekt": o_projekt,
+                    "Artiklar_JSON": json.dumps(o_items),
+                    "Totalt": o_totalt,
+                    "Villkor": o_villkor
+                }
+                df_offerter = pd.concat([df_offerter, pd.DataFrame([o_new_row])], ignore_index=True)
+                save_data(df_offerter, OFFERTER_FILE)
+                st.success(f"Offert {o_nr} har sparats!")
+
+    with col_obtn2:
+        pdf_offert = generate_pdf("Offert", o_nr, o_kund, str(o_datum), str(o_giltig), o_projekt, o_items, o_totalt, o_villkor)
+        st.download_button("📥 Ladda ner Offert-PDF", data=pdf_offert, file_name=f"Offert_{o_nr}.pdf", mime="application/pdf", use_container_width=True)
+
+    with col_obtn3:
+        if st.button("📧 Skicka Offert via E-post", use_container_width=True):
+            if not o_email:
+                st.error("Mata in kundens e-postadress ovan först!")
+            else:
+                o_body = f"Hej {o_kund},\n\nHär kommer offert {o_nr} gällande {o_projekt}.\nOfferten är giltig t.o.m. {o_giltig}.\n\nMed vänlig hälsning,\nLaso Invest AB"
+                if send_email_with_pdf(o_email, f"Offert {o_nr} - Laso Invest AB", o_body, pdf_offert, f"Offert_{o_nr}.pdf"):
+                    st.success(f"Offert skickad till {o_email}!")
 
 # --- FLIK 3: ARTIKELREGISTER ---
 with tab3:
