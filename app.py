@@ -405,22 +405,31 @@ with tabs[2]:
 # ==========================================
 with tabs[3]:
     st.subheader("Skapa PDF-Fakturaunderlag")
-    kunder = [k for k in df_data["Kund_Namn"].unique() if clean_str(k) != ""]
-    if not kunder:
+    
+    # 1. Ladda om databasen direkt så att nyligen tillagda kunder syns direkt
+    df_fresh = load_data()
+    
+    if df_fresh.empty:
         st.info("Inga registrerade underlag finns ännu.")
     else:
-        val_kund = st.selectbox("Välj Kund:", options=kunder)
-        kund_df = df_data[df_data["Kund_Namn"] == val_kund]
+        # 2. Hämta alla unika kundnamn, rensa tomma rader och sortera i bokstavsordning
+        kunder = sorted(list(set(clean_str(k) for k in df_fresh["Kund_Namn"].unique() if clean_str(k) != "")))
+        
+        if not kunder:
+            st.info("Inga registrerade kunder hittades.")
+        else:
+            val_kund = st.selectbox("Välj Kund:", options=kunder)
+            kund_df = df_fresh[df_fresh["Kund_Namn"] == val_kund]
 
-        pdf_filename = f"Fakturaunderlag_{val_kund}_{date.today()}.pdf"
+            pdf_filename = f"Fakturaunderlag_{val_kund}_{date.today()}.pdf"
 
-        if st.button("📄 Generera PDF-Fakturaunderlag", type="primary"):
-            if generate_pdf_file(val_kund, kund_df, pdf_filename):
-                st.success("PDF skapades framgångsrikt!")
-                with open(pdf_filename, "rb") as f:
-                    st.download_button(
-                        label="⬇️ Ladda ner PDF",
-                        data=f,
-                        file_name=pdf_filename,
-                        mime="application/pdf"
-                    )
+            if st.button("📄 Generera PDF-Fakturaunderlag", type="primary"):
+                if generate_pdf_file(val_kund, kund_df, pdf_filename):
+                    st.success("PDF skapades framgångsrikt!")
+                    with open(pdf_filename, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Ladda ner PDF",
+                            data=f,
+                            file_name=pdf_filename,
+                            mime="application/pdf"
+                        )
