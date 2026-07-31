@@ -1,0 +1,9 @@
+ID,Datum,Artikelnr,Artikel,Kategori,Kund_OrgNr,Kund_Namn,Kund_Adress,Kund_Postnr,Kund_Ort,Faktura_Namn,Faktura_Adress,Faktura_Postnr,Faktura_Ort,Beskrivning,Timmar,Timpris,Totalt
+1,2026-07-02,102,Maskinarbete (Lundberg 343),,667788-9999,Leif Berglund,Storgatan 50,89145,Örnsköldsvik,,,,,"Utfasning jord,",1,950.0,950.0
+2,2026-07-04,102,Maskinarbete (Lundberg 343),,667788-9999,Leif Berglund,Storgatan 50,89145,Örnsköldsvik,,,,,Lasta,2,950.0,1900.0
+3,2026-07-16,25100,Volvo 50 D,Grävmaskin Volvo 50D,19600609-7890,Sture Berglund,Stureplan 1,89700,Stockholm,,Sorgatan 50,89145,Örnsköldsvik,,1,500.0,500.0
+4,2026-07-18,25103,Grävskopa 60 cm,Grävmaskin Volvo 50D,19600609-7890,Sture Berglund,Stureplan 1,89700,Stockholm,,Sorgatan 50,89145,Örnsköldsvik,,5,20.0,100.0
+5,2026-07-15,25200,Lundberg 6240,Traktor Lundberg 6240,667788-9999,Test Testare,Testv. 1,888877,Testland,,,,,,1,500.0,500.0
+6,2026-07-15,25201,Förare traktor,Traktor Lundberg 6240,667788-9999,Test Testare,Testv. 1,888877,Testland,,,,,,1,400.0,400.0
+7,2026-07-07,25200,Lundberg 6240,Traktor Lundberg 6240,111111-2222,Lollo Losa,Losaartan 1,89788,Gävle,,,,,,1,500.0,500.0
+8,2026-07-07,25201,Förare traktor,Traktor Lundberg 6240,111111-2222,Lollo Losa,Losaartan 1,89788,Gävle,,,,,,1,400.0,400.0

@@ -1,0 +1,9 @@
+requirements_content = """streamlit
+pandas
+reportlab
+"""
+
+with open("requirements.txt", "w", encoding="utf-8") as f:
+    f.write(requirements_content)
+
+print("requirements.txt skapad framgångsrikt!")
