@@ -347,6 +347,15 @@ with tabs[0]:
 # ==========================================
 with tabs[1]:
     st.subheader("Hantera Artikeldatabas")
+    
+    # Knapp för att helt återställa standardartiklarna om listan blivit korrupt
+    if st.button("🔄 Återställ alla standardartiklar"):
+        df_art = default_articles()
+        st.success("Artikeldatabasen har återställts med alla standardartiklar!")
+        st.rerun()
+
+    st.divider()
+
     col_left, col_right = st.columns([1, 2])
 
     with col_left:
