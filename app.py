@@ -53,7 +53,6 @@ def get_article_info(df, article_name):
     if selected.empty:
         return 0.0, "st"
 
-    # Sök efter pris i olika kolumnnamn
     pris = 0.0
     for col in ["A-pris", "Pris", "A_pris", "a-pris"]:
         if col in selected.columns:
@@ -112,7 +111,7 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
     for item in items:
         table_data.append([
             item["Artikel"],
-            f"{item['Antal']:.2f}",
+            f"{item['Antal']}",
             item["Enhet"],
             f"{item['A-pris']:.2f}",
             f"{item['Summa']:.2f}"
@@ -163,10 +162,10 @@ with tab1:
 
     st.subheader("Artiklar på fakturan")
     if "f_rows" not in st.session_state:
-        st.session_state.f_rows = [{"Artikel": artiklar_lista[0] if artiklar_lista else "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"}]
+        st.session_state.f_rows = [{"Artikel": artiklar_lista[0] if artiklar_lista else "", "Antal": 1, "A-pris": 0.0, "Enhet": "tim"}]
 
     def add_f_row():
-        st.session_state.f_rows.append({"Artikel": "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"})
+        st.session_state.f_rows.append({"Artikel": "", "Antal": 1, "A-pris": 0.0, "Enhet": "tim"})
 
     f_items = []
     f_totalt = 0.0
@@ -177,7 +176,7 @@ with tab1:
             art = st.selectbox(f"Artikel #{i+1}", artiklar_lista, key=f"f_art_{i}")
             default_pris, default_enhet = get_article_info(df_artiklar, art)
         with c2:
-            antal = st.number_input("Antal", min_value=0.0, value=float(row["Antal"]), step=0.5, key=f"f_ant_{i}")
+            antal = st.number_input("Antal", min_value=1, value=int(row["Antal"]), step=1, key=f"f_ant_{i}")
         with c3:
             enhet = st.text_input("Enhet", value=default_enhet, key=f"f_enh_{i}")
         with c4:
@@ -215,10 +214,10 @@ with tab2:
 
     st.subheader("Offertrader")
     if "o_rows" not in st.session_state:
-        st.session_state.o_rows = [{"Artikel": artiklar_lista[0] if artiklar_lista else "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"}]
+        st.session_state.o_rows = [{"Artikel": artiklar_lista[0] if artiklar_lista else "", "Antal": 1, "A-pris": 0.0, "Enhet": "tim"}]
 
     def add_o_row():
-        st.session_state.o_rows.append({"Artikel": "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"})
+        st.session_state.o_rows.append({"Artikel": "", "Antal": 1, "A-pris": 0.0, "Enhet": "tim"})
 
     o_items = []
     o_totalt = 0.0
@@ -229,7 +228,7 @@ with tab2:
             o_art = st.selectbox(f"Artikel #{i+1}", artiklar_lista, key=f"o_art_{i}")
             o_default_pris, o_default_enhet = get_article_info(df_artiklar, o_art)
         with oc2:
-            o_antal = st.number_input("Antal", min_value=0.0, value=float(row["Antal"]), step=0.5, key=f"o_ant_{i}")
+            o_antal = st.number_input("Antal", min_value=1, value=int(row["Antal"]), step=1, key=f"o_ant_{i}")
         with oc3:
             o_enhet = st.text_input("Enhet", value=o_default_enhet, key=f"o_enh_{i}")
         with oc4:
