@@ -14,43 +14,72 @@ st.set_page_config(page_title="Laso Invest AB", layout="wide")
 DATA_FILE = "laso_invest_data.csv"
 ARTIKLAR_FILE = "laso_invest_artiklar.csv"
 OFFERTER_FILE = "laso_invest_offerter.csv"
-LOGO_FILE = "logo.png"  # Filnamn för framtida logotyp
+LOGO_FILE = "logo.png"
 
 # Ladda eller skapa data
 def load_data(file_path, columns):
     if os.path.exists(file_path):
-        return pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path)
+            if not df.empty:
+                return df
+        except:
+            pass
     return pd.DataFrame(columns=columns)
 
 def save_data(df, file_path):
     df.to_csv(file_path, index=False)
 
-df_fakturor = load_data(DATA_FILE, ["Fakturanummer", "Kund", "Datum", "Projekt", "Artiklar_JSON", "Totalt"])
-df_artiklar = load_data(ARTIKLAR_FILE, ["Artikel", "Enhet", "A-pris"])
-df_offerter = load_data(OFFERTER_FILE, ["Offertnummer", "Kund", "Datum", "Giltig_till", "Projekt", "Artiklar_JSON", "Totalt", "Villkor"])
-
-# Standardartiklar om listan är tom
-if df_artiklar.empty:
+# Skapa standardartiklar om filen saknas
+if not os.path.exists(ARTIKLAR_FILE):
     df_artiklar = pd.DataFrame([
         {"Artikel": "Traktortimmar - Lundberg 343", "Enhet": "tim", "A-pris": 850.0},
         {"Artikel": "Maskintjänst / Förare", "Enhet": "tim", "A-pris": 550.0},
         {"Artikel": "Etablering / Framkörning", "Enhet": "st", "A-pris": 1200.0}
     ])
     save_data(df_artiklar, ARTIKLAR_FILE)
+else:
+    df_artiklar = load_data(ARTIKLAR_FILE, ["Artikel", "Enhet", "A-pris"])
 
-# Funktion för PDF-generering (Faktunderlag & Offert)
+df_fakturor = load_data(DATA_FILE, ["Fakturanummer", "Kund", "Datum", "Projekt", "Artiklar_JSON", "Totalt"])
+df_offerter = load_data(OFFERTER_FILE, ["Offertnummer", "Kund", "Datum", "Giltig_till", "Projekt", "Artiklar_JSON", "Totalt", "Villkor"])
+
+# Hjälpfunktion för att säkert hämta pris/enhet
+def get_article_info(df, article_name):
+    if df.empty or "Artikel" not in df.columns:
+        return 0.0, "st"
+    
+    selected = df[df["Artikel"] == article_name]
+    if selected.empty:
+        return 0.0, "st"
+
+    # Sök efter pris i olika kolumnnamn
+    pris = 0.0
+    for col in ["A-pris", "Pris", "A_pris", "a-pris"]:
+        if col in selected.columns:
+            try:
+                pris = float(selected[col].values[0])
+                break
+            except:
+                pass
+
+    enhet = "st"
+    if "Enhet" in selected.columns:
+        enhet = str(selected["Enhet"].values[0])
+
+    return pris, enhet
+
+# Funktion för PDF-generering
 def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, totalt, villkor=""):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     styles = getSampleStyleSheet()
 
-    # Rubrikstil
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor("#0f2a4a"))
     normal_style = styles['Normal']
     bold_style = ParagraphStyle('BoldText', parent=normal_style, fontName='Helvetica-Bold')
 
-    # Logotyp eller Textrubrik
     if os.path.exists(LOGO_FILE):
         try:
             img = Image(LOGO_FILE, width=120, height=120)
@@ -70,7 +99,6 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
     story.append(Paragraph(header_text, normal_style))
     story.append(Spacer(1, 15))
 
-    # Kund & Projektinfo
     info_data = [
         [Paragraph("<b>Mottagare / Kund:</b>", normal_style), Paragraph(kund, normal_style)],
         [Paragraph("<b>Projekt / Beskrivning:</b>", normal_style), Paragraph(projekt if projekt else "-", normal_style)]
@@ -80,7 +108,6 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
     story.append(info_table)
     story.append(Spacer(1, 20))
 
-    # Rader / Tabell
     table_data = [["Beskrivning / Artikel", "Antal", "Enhet", "A-pris (kr)", "Summa (kr)"]]
     for item in items:
         table_data.append([
@@ -105,7 +132,6 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
     ]))
     story.append(t)
 
-    # Villkorstext om det finns (t.ex. för Offert)
     if villkor:
         story.append(Spacer(1, 20))
         story.append(Paragraph("<b>Villkor & Information:</b>", bold_style))
@@ -119,6 +145,8 @@ def generate_pdf(doc_type, doc_num, kund, datum, extra_date, projekt, items, tot
 st.title("🚜 Laso Invest AB - System")
 
 tab1, tab2, tab3 = st.tabs(["📄 Fakturaunderlag", "📋 Skapa Offert", "⚙️ Artikelregister"])
+
+artiklar_lista = df_artiklar["Artikel"].tolist() if "Artikel" in df_artiklar.columns else []
 
 # --- FLIK 1: FAKTURUNDERLAG ---
 with tab1:
@@ -135,7 +163,7 @@ with tab1:
 
     st.subheader("Artiklar på fakturan")
     if "f_rows" not in st.session_state:
-        st.session_state.f_rows = [{"Artikel": df_artiklar["Artikel"].iloc[0] if not df_artiklar.empty else "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"}]
+        st.session_state.f_rows = [{"Artikel": artiklar_lista[0] if artiklar_lista else "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"}]
 
     def add_f_row():
         st.session_state.f_rows.append({"Artikel": "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"})
@@ -146,10 +174,8 @@ with tab1:
     for i, row in enumerate(st.session_state.f_rows):
         c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 1])
         with c1:
-            art = st.selectbox(f"Artikel #{i+1}", df_artiklar["Artikel"].tolist(), key=f"f_art_{i}")
-            selected_art = df_artiklar[df_artiklar["Artikel"] == art]
-            default_pris = selected_art["A-pris"].values[0] if not selected_art.empty else 0.0
-            default_enhet = selected_art["Enhet"].values[0] if not selected_art.empty else "st"
+            art = st.selectbox(f"Artikel #{i+1}", artiklar_lista, key=f"f_art_{i}")
+            default_pris, default_enhet = get_article_info(df_artiklar, art)
         with c2:
             antal = st.number_input("Antal", min_value=0.0, value=float(row["Antal"]), step=0.5, key=f"f_ant_{i}")
         with c3:
@@ -189,7 +215,7 @@ with tab2:
 
     st.subheader("Offertrader")
     if "o_rows" not in st.session_state:
-        st.session_state.o_rows = [{"Artikel": df_artiklar["Artikel"].iloc[0] if not df_artiklar.empty else "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"}]
+        st.session_state.o_rows = [{"Artikel": artiklar_lista[0] if artiklar_lista else "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"}]
 
     def add_o_row():
         st.session_state.o_rows.append({"Artikel": "", "Antal": 1.0, "A-pris": 0.0, "Enhet": "tim"})
@@ -200,10 +226,8 @@ with tab2:
     for i, row in enumerate(st.session_state.o_rows):
         oc1, oc2, oc3, oc4, oc5 = st.columns([3, 1, 1, 1, 1])
         with oc1:
-            o_art = st.selectbox(f"Artikel #{i+1}", df_artiklar["Artikel"].tolist(), key=f"o_art_{i}")
-            o_selected_art = df_artiklar[df_artiklar["Artikel"] == o_art]
-            o_default_pris = o_selected_art["A-pris"].values[0] if not o_selected_art.empty else 0.0
-            o_default_enhet = o_selected_art["Enhet"].values[0] if not o_selected_art.empty else "st"
+            o_art = st.selectbox(f"Artikel #{i+1}", artiklar_lista, key=f"o_art_{i}")
+            o_default_pris, o_default_enhet = get_article_info(df_artiklar, o_art)
         with oc2:
             o_antal = st.number_input("Antal", min_value=0.0, value=float(row["Antal"]), step=0.5, key=f"o_ant_{i}")
         with oc3:
