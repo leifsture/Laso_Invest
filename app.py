@@ -108,9 +108,14 @@ def load_articles():
         try:
             df = pd.read_csv(ARTICLE_FILE, dtype=str).fillna("")
             for col in ARTICLE_COLUMNS:
-                if col not in df.columns: df[col] = ""
+                if col not in df.columns:
+                    df[col] = ""
+            # Om filen finns men är tom på artiklar, återställ standardartiklarna
+            if df.empty:
+                return default_articles()
             return df[ARTICLE_COLUMNS]
-        except Exception: return default_articles()
+        except Exception:
+            return default_articles()
     return default_articles()
 
 def save_articles(df): df.to_csv(ARTICLE_FILE, index=False)
