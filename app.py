@@ -427,43 +427,44 @@ with tabs[1]:
             st.warning("Fyll i alla fält för att lägga till en ny artikel.")
 
 # ==========================================
-# FLIK 3: REDIGERA / TA BORT
+# FLIK 3: REDIGERA / TA BORT POSTER
 # ==========================================
-with tabs[3]:
-    st.subheader("✏️ Redigera / Ta bort registrerade arbeten")
-    st.caption("💡 *Markera rader längst till vänster för att radera dem (med Delete-tangenten), eller klicka direkt i cellerna för att ändra text/antal/pris.*")
+with tabs[2]:
+    st.subheader("✏️ Redigera / Ta bort registrerade poster")
+    st.caption("💡 *Markera rader längst till vänster (klicka på siffran/rutan) och tryck Delete på tangentbordet för att ta bort hela raden. Du kan också dubbelklicka i vilken cell som helst för att ändra text, antal eller priser.*")
 
-    # Läs in sparade arbeten
-    df_arb = load_work()
+    # Ladda om databasen direkt
+    df_data_current = load_data()
 
-    if df_arb.empty:
-        st.info("Det finns inga registrerade arbeten ännu.")
+    if df_data_current.empty:
+        st.info("Inga poster sparade ännu.")
     else:
-        # 1. EXCEL-EDITERING DIRECT I TABELLEN
-        edited_arb = st.data_editor(
-            df_arb,
+        # EXCEL-EDITERING DIREKT I TABELLEN
+        edited_data = st.data_editor(
+            df_data_current,
             use_container_width=True,
-            num_rows="dynamic",  # Gör det möjligt att markera och radera rader som i Excel!
+            num_rows="dynamic",  # Gör det möjligt att radera rader som i Excel!
             height=500,
             column_config={
+                "ID": st.column_config.TextColumn("ID", disabled=True),  # Lås ID så det inte ändras av misstag
                 "Datum": st.column_config.TextColumn("Datum", required=True),
-                "Kund": st.column_config.TextColumn("Kund", required=True),
-                "Artikel": st.column_config.TextColumn("Artikel", required=True),
-                "Antal": st.column_config.TextColumn("Antal", required=True),
-                "ArtPris": st.column_config.TextColumn("Pris", required=True),
-                "Siffra": st.column_config.TextColumn("Fakturanr / Ordernr"),
-                "Kommentar": st.column_config.TextColumn("Kommentar"),
+                "Kund_Namn": st.column_config.TextColumn("Kundnamn", required=True),
+                "Artikelnr": st.column_config.TextColumn("Artikelnr"),
+                "Artikel": st.column_config.TextColumn("Artikel"),
+                "Beskrivning": st.column_config.TextColumn("Beskrivning"),
+                "Timmar": st.column_config.TextColumn("Timmar/Antal"),
+                "Timpris": st.column_config.TextColumn("A-pris"),
+                "Totalt": st.column_config.TextColumn("Totalt (kr)"),
             },
-            key="editor_registrerade_arbeten"
+            key="editor_registrerade_poster"
         )
 
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # 2. SPARA-KNAPP FOR ATT FASTSTÄLLA ÄNDRINGAR / RADERINGAR
-        if st.button("💾 Spara alla ändringar i arbetstabellen", type="primary"):
-            # Spara hela den uppdaterade tabellen (där borttagna rader automatiskt försvunnit)
-            save_work(edited_arb)
-            st.success("Tabellen har uppdaterats och sparats!")
+
+        # SPARA-KNAPP FÖR ÄNDRINGAR / RADERINGAR
+        if st.button("💾 Spara alla ändringar i databasen", type="primary"):
+            save_data(edited_data)
+            st.success("Databasen har uppdaterats och sparats!")
             st.rerun()
 
 # ==========================================
