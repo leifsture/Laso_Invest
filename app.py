@@ -35,7 +35,6 @@ OFFERT_COLUMNS = [
 ]
 
 DEFAULT_ARTICLES = [
-    # Grävmaskin Volvo 50D
     {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25100", "Artikel": "Volvo 50 D", "ArtPris": "500.00"},
     {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25101", "Artikel": "Förare grävmaskin", "ArtPris": "400.00"},
     {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25102", "Artikel": "Rotor encon, grip, centralsmörjning", "ArtPris": "160.00"},
@@ -54,7 +53,6 @@ DEFAULT_ARTICLES = [
     {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25115", "Artikel": "Buskröjare aggregat 100 cm", "ArtPris": "80.00"},
     {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25116", "Artikel": "Hydraulisk trädklipp 20 cm", "ArtPris": "50.00"},
 
-    # Lundberg 6240
     {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25200", "Artikel": "Lundberg 6240 inkl förare", "ArtPris": "500.00"},
     {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25201", "Artikel": "Förare traktor", "ArtPris": "400.00"},
     {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25202", "Artikel": "Planeringsskopa 220 cm bred", "ArtPris": "30.00"},
@@ -72,7 +70,6 @@ DEFAULT_ARTICLES = [
     {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25214", "Artikel": "Hydrauliska pallgafflar 150 längd", "ArtPris": "35.00"},
     {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25215", "Artikel": "Hydraulisk slagklippare 200cm bred", "ArtPris": "120.00"},
 
-    # Övrigt
     {"Kategori": "Övrigt", "Artikelnr": "25300", "Artikel": "Släp kåpa, tipp", "ArtPris": "60.00"},
     {"Kategori": "Övrigt", "Artikelnr": "25301", "Artikel": "Avvägningsinstrument Laser", "ArtPris": "25.00"},
     {"Kategori": "Övrigt", "Artikelnr": "25302", "Artikel": "Instrument för Ledningskoll", "ArtPris": "25.00"},
@@ -198,10 +195,15 @@ def generate_pdf_file(customer_name, records, filepath):
         Paragraph("<b>Belopp (SEK)</b>", meta_bold)
     ]]
 
-    totalt_belopp, totalt_timmar = 0.0, 0.0
+    totalt_belopp, totalt_timmar = 0.0, 0
     for _, row in records.sort_values(by="Datum").iterrows():
-        try: t_tim, t_pris, t_tot = float(row["Timmar"]), float(row["Timpris"]), float(row["Totalt"])
-        except ValueError: t_tim, t_pris, t_tot = 0.0, 0.0, 0.0
+        try: 
+            t_tim = int(float(row["Timmar"]))
+            t_pris = float(row["Timpris"])
+            t_tot = float(row["Totalt"])
+        except ValueError: 
+            t_tim, t_pris, t_tot = 0, 0.0, 0.0
+            
         totalt_belopp += t_tot
         totalt_timmar += t_tim
 
@@ -214,14 +216,14 @@ def generate_pdf_file(customer_name, records, filepath):
         table_data.append([
             Paragraph(str(row["Datum"]), meta_style),
             Paragraph(beskrivning_text, meta_style),
-            Paragraph(f"{int(t_tim) if t_tim.is_integer() else t_tim}", meta_style),
+            Paragraph(f"{t_tim}", meta_style),
             Paragraph(f"{t_pris:.2f} kr", meta_style),
             Paragraph(f"{t_tot:.2f} kr", meta_style)
         ])
 
     table_data.append([
         Paragraph("<b>Totalt:</b>", meta_bold), Paragraph("", meta_style),
-        Paragraph(f"<b>{int(totalt_timmar) if totalt_timmar.is_integer() else totalt_timmar} st/h</b>", meta_bold), Paragraph("", meta_style),
+        Paragraph(f"<b>{totalt_timmar} st/h</b>", meta_bold), Paragraph("", meta_style),
         Paragraph(f"<b>{totalt_belopp:.2f} kr</b>", meta_bold)
     ])
 
@@ -284,11 +286,11 @@ def generate_offert_pdf(offertnr, records, filepath):
     totalt_exkl = 0.0
     for idx, (_, row) in enumerate(records.iterrows(), 1):
         try:
-            antal = float(row["Antal"])
+            antal = int(float(row["Antal"]))
             apris = float(row["A_Pris"])
             tot = float(row["Totalt"])
         except ValueError:
-            antal, apris, tot = 0.0, 0.0, 0.0
+            antal, apris, tot = 0, 0.0, 0.0
             
         totalt_exkl += tot
 
@@ -301,7 +303,7 @@ def generate_offert_pdf(offertnr, records, filepath):
         table_data.append([
             Paragraph(str(idx), meta_style),
             Paragraph(beskrivning_text, meta_style),
-            Paragraph(f"{int(antal) if antal.is_integer() else antal}", meta_style),
+            Paragraph(f"{antal}", meta_style),
             Paragraph(f"{apris:.2f} kr", meta_style),
             Paragraph(f"{tot:.2f} kr", meta_style)
         ])
@@ -395,7 +397,8 @@ with tabs[0]:
     with col_b:
         val_art = st.selectbox("Välj Artikel", options=art_options, index=0)
     with col_c:
-        antal_val = st.number_input("Antal/Timmar", min_value=0.5, value=1.0, step=0.5)
+        # ENBART HELTAL
+        antal_val = st.number_input("Antal/Timmar", min_value=1, value=1, step=1)
     with col_d:
         desc_val = st.text_input("Beskrivning (frivillig)", key="ent_desc_val")
 
@@ -415,7 +418,7 @@ with tabs[0]:
                 "Artikel": art_row["Artikel"],
                 "Kategori": art_row["Kategori"],
                 "Beskrivning": desc_val,
-                "Timmar": int(antal_val) if float(antal_val).is_integer() else antal_val,
+                "Timmar": int(antal_val),
                 "Timpris": pris,
                 "Totalt": tot
             })
@@ -481,7 +484,6 @@ with tabs[1]:
     with sub_tab1:
         st.markdown("#### 1. Offert- & Kundinformation")
         
-        # Generera nytt offertnummer automatiskt
         next_offert_nr = "OFF-1001"
         if not df_offert.empty and "Offertnr" in df_offert.columns:
             nums = df_offert["Offertnr"].str.replace("OFF-", "", regex=False)
@@ -489,7 +491,6 @@ with tabs[1]:
             if not nums_numeric.empty:
                 next_offert_nr = f"OFF-{int(nums_numeric.max() + 1)}"
 
-        # DIREKT-INMATNING AV KUNDUPPGIFTER (Ingen st.form som blockerar)
         col_off1, col_off2 = st.columns(2)
         
         with col_off1:
@@ -522,7 +523,8 @@ with tabs[1]:
         with col_oa:
             val_off_art = st.selectbox("Välj Artikel/Tjänst", options=art_options_off, key="val_off_art")
         with col_ob:
-            off_antal = st.number_input("Antal/Timmar", min_value=0.5, value=1.0, step=0.5, key="off_antal")
+            # ENBART HELTAL
+            off_antal = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key="off_antal")
         with col_oc:
             off_desc = st.text_input("Beskrivning / Specifikation (Valfri)", key="off_desc")
 
@@ -532,49 +534,54 @@ with tabs[1]:
             else:
                 art_row = art_map_off[val_off_art]
                 pris = float(art_row["ArtPris"].replace("kr", "").replace(" ", ""))
-                tot = float(off_antal) * pris
+                tot = int(off_antal) * pris
 
                 st.session_state.temp_offert_items.append({
                     "Artikelnr": art_row["Artikelnr"],
                     "Artikel": art_row["Artikel"],
                     "Beskrivning": off_desc,
-                    "Antal": int(off_antal) if float(off_antal).is_integer() else off_antal,
+                    "Antal": int(off_antal),
                     "A_Pris": pris,
                     "Totalt": tot
                 })
                 st.success(f"Lade till '{art_row['Artikel']}' i offerten.")
                 st.rerun()
 
-        # HANTERA TEMPORÄRA OFFERTRADER & BORTTAGNING AV ENSKILD RAD
+        # REDIGERBAR TABELL FÖR OFFERTRADER (Radera rader med Delete)
         if st.session_state.temp_offert_items:
             st.markdown("##### Offertrader:")
+            st.caption("💡 *Klicka på rutan längst till vänster för raden du vill ta bort och tryck **Delete** på tangentbordet.*")
+
             off_df_temp = pd.DataFrame(st.session_state.temp_offert_items)
-            st.dataframe(off_df_temp, use_container_width=True)
-
-            col_del1, col_del2, col_del3 = st.columns([2, 2, 3])
             
-            with col_del1:
-                # Välj vilken rad (index) som ska tas bort
-                rad_options = [f"Rad {i}: {item['Artikel']}" for i, item in enumerate(st.session_state.temp_offert_items)]
-                rad_att_ta_bort = st.selectbox("Välj rad att ta bort:", options=range(len(rad_options)), format_func=lambda x: rad_options[x], key="select_del_row")
-            
-            with col_del2:
-                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("🗑️ Ta bort markerad rad"):
-                    removed = st.session_state.temp_offert_items.pop(rad_att_ta_bort)
-                    st.success(f"Tog bort '{removed['Artikel']}' från offerten.")
-                    st.rerun()
+            edited_off_df = st.data_editor(
+                off_df_temp,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Artikelnr": st.column_config.TextColumn("Artikelnr"),
+                    "Artikel": st.column_config.TextColumn("Artikel"),
+                    "Beskrivning": st.column_config.TextColumn("Beskrivning"),
+                    "Antal": st.column_config.NumberColumn("Antal/Timmar", step=1, format="%d"),
+                    "A_Pris": st.column_config.NumberColumn("A-pris", format="%.2f kr"),
+                    "Totalt": st.column_config.NumberColumn("Totalt", format="%.2f kr"),
+                },
+                key="editor_temp_offert"
+            )
 
-            with col_del3:
-                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("❌ Töm alla offertrader"):
-                    st.session_state.temp_offert_items = []
-                    st.rerun()
+            # Uppdatera session state om användaren tog bort/redigerade rader i tabellen
+            st.session_state.temp_offert_items = edited_off_df.to_dict(orient="records")
+
+            if st.button("❌ Töm alla offertrader"):
+                st.session_state.temp_offert_items = []
+                st.rerun()
 
             st.divider()
             if st.button("💾 SPARA OCH SKAPA OFFERT", type="primary", use_container_width=True):
                 if not off_k_namn.strip():
                     st.error("Du måste fylla i Kundnamn!")
+                elif not st.session_state.temp_offert_items:
+                    st.error("Du har inga offertrader kvar i listan!")
                 else:
                     new_off_rows = []
                     for item in st.session_state.temp_offert_items:
@@ -590,7 +597,7 @@ with tabs[1]:
                             "Artikelnr": item["Artikelnr"],
                             "Artikel": item["Artikel"],
                             "Beskrivning": item["Beskrivning"],
-                            "Antal": str(item["Antal"]),
+                            "Antal": str(int(float(item["Antal"]))),
                             "A_Pris": str(item["A_Pris"]),
                             "Totalt": str(item["Totalt"]),
                             "Status": "Skapad"
@@ -724,7 +731,7 @@ with tabs[3]:
                 "Artikelnr": st.column_config.TextColumn("Artikelnr"),
                 "Artikel": st.column_config.TextColumn("Artikel"),
                 "Beskrivning": st.column_config.TextColumn("Beskrivning"),
-                "Timmar": st.column_config.TextColumn("Timmar/Antal"),
+                "Timmar": st.column_config.NumberColumn("Timmar/Antal", step=1, format="%d"),
                 "Timpris": st.column_config.TextColumn("A-pris"),
                 "Totalt": st.column_config.TextColumn("Totalt (kr)"),
             },
