@@ -780,14 +780,43 @@ with tabs[4]:
     if df_pdf.empty:
         st.info("Inga registrerade underlag finns ännu.")
     else:
-        kunder_lista = list(filter(None, df_pdf["Kund_Namn"].str.strip().unique()))
-        kunder_lista.sort()
+        df_pdf["Kund_Namn_Clean"] = df_pdf["Kund_Namn"].str.strip()
+        df_pdf_valid = df_pdf[df_pdf["Kund_Namn_Clean"] != ""].copy()
 
-        if not kunder_lista:
+        if df_pdf_valid.empty:
             st.warning("Hittade inga kunder i databasen.")
         else:
-            val_kund = st.radio("Välj kund för fakturaunderlag:", options=kunder_lista, key="radio_kund_pdf")
-            kund_df = df_pdf[df_pdf["Kund_Namn"].str.strip() == val_kund]
+            # Gruppera per kund och hämta senaste datum + max ID
+            kund_summary = (
+                df_pdf_valid.groupby("Kund_Namn_Clean")
+                .agg(
+                    Senaste_Datum=("Datum", "max"),
+                    Max_ID=("ID", lambda x: pd.to_numeric(x, errors="coerce").max())
+                )
+                .reset_index()
+            )
+
+            # Sortera så att senast inlagda hamnar först
+            kund_summary = kund_summary.sort_values(
+                by=["Senaste_Datum", "Max_ID"], ascending=[False, False]
+            )
+
+            # Bygg namn med datum i parentes
+            options_map = {}
+            for _, row in kund_summary.iterrows():
+                k_name = row["Kund_Namn_Clean"]
+                d_str = row["Senaste_Datum"]
+                label = f"{k_name} ({d_str})" if d_str else k_name
+                options_map[label] = k_name
+
+            selected_label = st.radio(
+                "Välj kund för fakturaunderlag:",
+                options=list(options_map.keys()),
+                key="radio_kund_pdf"
+            )
+
+            val_kund = options_map[selected_label]
+            kund_df = df_pdf_valid[df_pdf_valid["Kund_Namn_Clean"] == val_kund]
 
             st.write(f"**Antal rader för {val_kund}:** {len(kund_df)}")
             pdf_filename = f"Fakturaunderlag_{val_kund}_{date.today()}.pdf"
