@@ -20,8 +20,9 @@ DATA_FILE = "laso_invest_data.csv"
 ARTICLE_FILE = "laso_invest_artiklar.csv"
 OFFERT_FILE = "laso_invest_offerter.csv"
 
+# Tillagd kolumn: Skapad_Datum för sortering på när underlaget registrerades
 DATA_COLUMNS = [
-    "ID", "Datum", "Artikelnr", "Artikel", "Kategori",
+    "ID", "Datum", "Skapad_Datum", "Artikelnr", "Artikel", "Kategori",
     "Kund_OrgNr", "Kund_Namn", "Kund_Adress", "Kund_Postnr", "Kund_Ort",
     "Faktura_Namn", "Faktura_Adress", "Faktura_Postnr", "Faktura_Ort",
     "Beskrivning", "Timmar", "Timpris", "Totalt"
@@ -109,7 +110,9 @@ def load_data():
         try:
             df = pd.read_csv(DATA_FILE, dtype=str).fillna("")
             for col in DATA_COLUMNS:
-                if col not in df.columns: df[col] = ""
+                if col not in df.columns: 
+                    # Om Skapad_Datum saknas i gamla poster, använd vanliga Datum som fallback
+                    df[col] = df["Datum"] if col == "Skapad_Datum" else ""
             return df[DATA_COLUMNS]
         except Exception: return pd.DataFrame(columns=DATA_COLUMNS)
     return pd.DataFrame(columns=DATA_COLUMNS)
@@ -349,6 +352,20 @@ if "temp_items" not in st.session_state:
 if "temp_offert_items" not in st.session_state:
     st.session_state.temp_offert_items = []
 
+# Nollställer alla formulärfält
+def reset_register_form():
+    st.session_state["k_namn"] = ""
+    st.session_state["k_orgnr"] = ""
+    st.session_state["k_adress"] = ""
+    st.session_state["k_postnr"] = ""
+    st.session_state["k_ort"] = ""
+    st.session_state["f_namn"] = ""
+    st.session_state["f_adress"] = ""
+    st.session_state["f_postnr"] = ""
+    st.session_state["f_ort"] = ""
+    st.session_state["ent_desc_val"] = ""
+    st.session_state.temp_items = []
+
 df_data = load_data()
 df_art = load_articles()
 df_offert = load_offerter()
@@ -443,11 +460,13 @@ with tabs[0]:
                     try: start_id = int(pd.to_numeric(df_data["ID"]).max() + 1)
                     except Exception: start_id = len(df_data) + 1
 
+                idag_str = str(date.today())
                 new_rows = []
                 for idx, item in enumerate(st.session_state.temp_items):
                     new_rows.append({
                         "ID": str(start_id + idx),
                         "Datum": item["Datum"],
+                        "Skapad_Datum": idag_str,  # Dagens datum när det skapades i systemet
                         "Artikelnr": item["Artikelnr"],
                         "Artikel": item["Artikel"],
                         "Kategori": item["Kategori"],
@@ -468,8 +487,10 @@ with tabs[0]:
 
                 df_data = pd.concat([df_data, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df_data)
-                st.session_state.temp_items = []
-                st.success(f"Underlaget för {k_namn} har sparats!")
+                
+                # Nollställ hela formuläret och rensa alla fält
+                reset_register_form()
+                st.success(f"Underlaget för {k_namn} har sparats och formuläret har rensats!")
                 st.rerun()
 
 # ==========================================
@@ -545,14 +566,12 @@ with tabs[1]:
                 st.success(f"Lade till '{art_row['Artikel']}' i offerten.")
                 st.rerun()
 
-        # REDIGERBAR TABELL MED AUTOMATISK OMRÄKNING AV TOTALT
         if st.session_state.temp_offert_items:
             st.markdown("##### Offertrader:")
-            st.caption("💡 *Ändra Antal direkt i tabellen så räknas Totalt om automatiskt. För att ta bort en rad: markera rutan längst till vänster och tryck Delete.*")
+            st.caption("💡 *Ändra Antal direkt i tabellen så räknas Totalt om automatiskt.*")
 
             off_df_temp = pd.DataFrame(st.session_state.temp_offert_items)
             
-            # Beräkna om Totalt
             off_df_temp["Antal"] = pd.to_numeric(off_df_temp["Antal"], errors="coerce").fillna(1).astype(int)
             off_df_temp["A_Pris"] = pd.to_numeric(off_df_temp["A_Pris"], errors="coerce").fillna(0.0)
             off_df_temp["Totalt"] = off_df_temp["Antal"] * off_df_temp["A_Pris"]
@@ -572,7 +591,6 @@ with tabs[1]:
                 key="editor_temp_offert"
             )
 
-            # Uppdatera och räkna om session state
             edited_off_df["Antal"] = pd.to_numeric(edited_off_df["Antal"], errors="coerce").fillna(1).astype(int)
             edited_off_df["A_Pris"] = pd.to_numeric(edited_off_df["A_Pris"], errors="coerce").fillna(0.0)
             edited_off_df["Totalt"] = edited_off_df["Antal"] * edited_off_df["A_Pris"]
@@ -618,7 +636,6 @@ with tabs[1]:
                     st.success(f"Offert {offert_nr} till {off_k_namn} har sparats!")
                     st.rerun()
 
-    # Sparade offerter
     with sub_tab2:
         df_offert_curr = load_offerter()
         if df_offert_curr.empty:
@@ -628,8 +645,6 @@ with tabs[1]:
             val_off_nr = st.selectbox("Välj Offert för utskrift/PDF:", options=off_lista)
 
             selected_off_df = df_offert_curr[df_offert_curr["Offertnr"] == val_off_nr].copy()
-            
-            # Säkerställ dynamisk omräkning i sparad vy
             selected_off_df["Antal_num"] = pd.to_numeric(selected_off_df["Antal"], errors="coerce").fillna(0)
             selected_off_df["A_Pris_num"] = pd.to_numeric(selected_off_df["A_Pris"], errors="coerce").fillna(0)
             selected_off_df["Totalt"] = (selected_off_df["Antal_num"] * selected_off_df["A_Pris_num"]).astype(str)
@@ -658,7 +673,6 @@ with tabs[2]:
     col_tb1, col_tb2 = st.columns([2, 1])
     with col_tb1:
         st.markdown("#### Sparade artiklar (Redigera direkt i tabellen)")
-        st.caption("💡 *Klicka direkt i tabellen nedan för att ändra priser, artikelnamn m.m. Klicka sedan på spara-knappen.*")
     with col_tb2:
         if st.button("🔄 Återställ till standardartiklar"):
             df_art = default_articles()
@@ -727,7 +741,6 @@ with tabs[2]:
 # ==========================================
 with tabs[3]:
     st.subheader("✏️ Redigera / Ta bort registrerade poster")
-    st.caption("💡 *Markera rader längst till vänster och tryck Delete för att radera. Dubbelklicka i en cell för att ändra text/priser.*")
 
     df_data_current = load_data()
 
@@ -741,7 +754,8 @@ with tabs[3]:
             height=500,
             column_config={
                 "ID": st.column_config.TextColumn("ID", disabled=True),
-                "Datum": st.column_config.TextColumn("Datum", required=True),
+                "Datum": st.column_config.TextColumn("Utförandedatum", required=True),
+                "Skapad_Datum": st.column_config.TextColumn("Skapad i systemet", disabled=True),
                 "Kund_Namn": st.column_config.TextColumn("Kundnamn", required=True),
                 "Artikelnr": st.column_config.TextColumn("Artikelnr"),
                 "Artikel": st.column_config.TextColumn("Artikel"),
@@ -753,7 +767,6 @@ with tabs[3]:
             key="editor_registrerade_poster"
         )
 
-        # Räkna om Totalt vid sparande
         edited_data["Timmar_num"] = pd.to_numeric(edited_data["Timmar"], errors="coerce").fillna(0)
         edited_data["Timpris_num"] = pd.to_numeric(edited_data["Timpris"], errors="coerce").fillna(0)
         edited_data["Totalt"] = (edited_data["Timmar_num"] * edited_data["Timpris_num"]).astype(str)
@@ -780,32 +793,36 @@ with tabs[4]:
     if df_pdf.empty:
         st.info("Inga registrerade underlag finns ännu.")
     else:
+        # Om Skapad_Datum saknas på äldre rader i CSV-filen, fyll i vanliga Datum som fallback
+        if "Skapad_Datum" not in df_pdf.columns:
+            df_pdf["Skapad_Datum"] = df_pdf["Datum"]
+
         df_pdf["Kund_Namn_Clean"] = df_pdf["Kund_Namn"].str.strip()
         df_pdf_valid = df_pdf[df_pdf["Kund_Namn_Clean"] != ""].copy()
 
         if df_pdf_valid.empty:
             st.warning("Hittade inga kunder i databasen.")
         else:
-            # Gruppera per kund och hämta senaste datum + max ID
+            # Gruppera per kund och hämta det SENAST SKAPADE DATUMET och MAX ID
             kund_summary = (
                 df_pdf_valid.groupby("Kund_Namn_Clean")
                 .agg(
-                    Senaste_Datum=("Datum", "max"),
+                    Senaste_Skapad=("Skapad_Datum", "max"),
                     Max_ID=("ID", lambda x: pd.to_numeric(x, errors="coerce").max())
                 )
                 .reset_index()
             )
 
-            # Sortera så att senast inlagda hamnar först
+            # Sortera på skapandedatum + max ID (senast skapade/tillagda hamnar överst)
             kund_summary = kund_summary.sort_values(
-                by=["Senaste_Datum", "Max_ID"], ascending=[False, False]
+                by=["Senaste_Skapad", "Max_ID"], ascending=[False, False]
             )
 
-            # Bygg namn med datum i parentes
+            # Bygg alternativ med skapandedatum
             options_map = {}
             for _, row in kund_summary.iterrows():
                 k_name = row["Kund_Namn_Clean"]
-                d_str = row["Senaste_Datum"]
+                d_str = row["Senaste_Skapad"]
                 label = f"{k_name} ({d_str})" if d_str else k_name
                 options_map[label] = k_name
 
