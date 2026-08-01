@@ -86,6 +86,15 @@ def clean_str(val):
     s = str(val).strip()
     return "" if s.lower() == "nan" or s == "<NA>" else s
 
+def format_pris(val):
+    try:
+        # Rensa bort eventuellt befintliga "kr", mellanslag m.m.
+        clean_val = str(val).replace("kr", "").replace(" ", "").replace(",", ".").strip()
+        num = int(round(float(clean_val)))
+        # Formatera med tusentalsavgränsare (mellanslag) och lägg till " kr"
+        return f"{num:,}".replace(",", " ") + " kr"
+    except (ValueError, TypeError):
+        return str(val)
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -355,27 +364,36 @@ with tabs[1]:
     with col_tb2:
         if st.button("🔄 Återställ till standardartiklar"):
             df_art = default_articles()
+            # Formatera priserna vid återställning
+            df_art["ArtPris"] = df_art["ArtPris"].apply(format_pris)
+            save_articles(df_art)
             st.success("Artikeldatabasen har återställts!")
             st.rerun()
 
+    # Se till att befintliga priser visas snyggt
+    df_art_display = df_art.copy()
+    df_art_display["ArtPris"] = df_art_display["ArtPris"].apply(format_pris)
+
     # 1. DIREKTREDIGERING I TABELLEN
     edited_df = st.data_editor(
-        df_art,
+        df_art_display,
         use_container_width=True,
-        num_rows="dynamic",  # Gör att man även kan lägga till/radera rader direkt i tabellen!
+        num_rows="dynamic",
         height=450,
         column_config={
             "Kategori": st.column_config.SelectboxColumn("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], required=True),
             "Artikelnr": st.column_config.TextColumn("Artikelnr", required=True),
             "Artikel": st.column_config.TextColumn("Artikel / Benämning", required=True),
-            "ArtPris": st.column_config.TextColumn("Pris (SEK)", required=True),
+            "ArtPris": st.column_config.TextColumn("Pris", help="Anges i heltal (t.ex. 1250 kr)", required=True),
         },
         key="editor_artiklar"
     )
 
     if st.button("💾 Spara alla ändringar i tabellen", type="primary"):
-        # Rensa eventuella tomma rader innan vi sparar
-        cleaned_df = edited_df[edited_df["Artikelnr"].str.strip() != ""].copy()
+        # Rensa tomma rader och formatera alla priser till heltal med 'kr'
+        cleaned_df = edited_df[edited_df["Artikelnr"].astype(str).str.strip() != ""].copy()
+        cleaned_df["ArtPris"] = cleaned_df["ArtPris"].apply(format_pris)
+        
         save_articles(cleaned_df)
         st.success("Alla ändringar i artikeldatabasen har sparats!")
         st.rerun()
@@ -392,18 +410,18 @@ with tabs[1]:
     with col_a3:
         new_namn = st.text_input("Artikelnamn", key="new_namn")
     with col_a4:
-        new_pris = st.text_input("Pris (SEK)", key="new_pris")
+        new_pris = st.text_input("Pris (t.ex. 1250)", key="new_pris")
 
     if st.button("➕ Lägg till ny artikel i listan"):
         if new_nr and new_namn and new_pris:
-            # Kontrollera om artikelnr redan finns
             if not df_art[df_art["Artikelnr"] == new_nr].empty:
-                st.error(f"Artikelnr {new_nr} finns redan! Ändra priset direkt i tabellen ovan istället.")
+                st.error(f"Artikelnr {new_nr} finns redan!")
             else:
-                new_row = pd.DataFrame([{"Kategori": new_cat, "Artikelnr": new_nr, "Artikel": new_namn, "ArtPris": new_pris}])
+                formatted_p = format_pris(new_pris)
+                new_row = pd.DataFrame([{"Kategori": new_cat, "Artikelnr": new_nr, "Artikel": new_namn, "ArtPris": formatted_p}])
                 df_art = pd.concat([df_art, new_row], ignore_index=True)
                 save_articles(df_art)
-                st.success(f"Artikeln '{new_namn}' lades till!")
+                st.success(f"Artikeln '{new_namn}' lades till med priset {formatted_p}!")
                 st.rerun()
         else:
             st.warning("Fyll i alla fält för att lägga till en ny artikel.")
