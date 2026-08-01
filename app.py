@@ -276,7 +276,7 @@ def generate_offert_pdf(offertnr, records, filepath):
     table_data = [[
         Paragraph("<b>Pos</b>", meta_bold),
         Paragraph("<b>Artikel / Beskrivning</b>", meta_bold),
-        Paragraph("<b>Antal/Timmar</b>", meta_bold), # ÄNDRAD FRÅN Antal/Enh TILL Antal/Timmar
+        Paragraph("<b>Antal/Timmar</b>", meta_bold),
         Paragraph("<b>A-pris</b>", meta_bold),
         Paragraph("<b>Totalt (exkl. moms)</b>", meta_bold)
     ]]
@@ -489,24 +489,21 @@ with tabs[1]:
             if not nums_numeric.empty:
                 next_offert_nr = f"OFF-{int(nums_numeric.max() + 1)}"
 
-        # Formulär för att tillåta Enter/Tab utan för tidig submit
-        with st.form("offert_kund_form"):
-            col_off1, col_off2 = st.columns(2)
-            
-            with col_off1:
-                off_k_namn = st.text_input("Kundnamn *", key="off_k_namn")
-                off_k_orgnr = st.text_input("Org.nr / Personnr", key="off_k_orgnr")
-                off_k_adress = st.text_input("Kund Adress", key="off_k_adress")
-                col_p, col_o = st.columns(2)
-                with col_p: off_k_post = st.text_input("Postnr", key="off_k_post")
-                with col_o: off_k_ort = st.text_input("Ort", key="off_k_ort")
+        # DIREKT-INMATNING AV KUNDUPPGIFTER (Ingen st.form som blockerar)
+        col_off1, col_off2 = st.columns(2)
+        
+        with col_off1:
+            off_k_namn = st.text_input("Kundnamn *", key="off_k_namn")
+            off_k_orgnr = st.text_input("Org.nr / Personnr", key="off_k_orgnr")
+            off_k_adress = st.text_input("Kund Adress", key="off_k_adress")
+            col_p, col_o = st.columns(2)
+            with col_p: off_k_post = st.text_input("Postnr", key="off_k_post")
+            with col_o: off_k_ort = st.text_input("Ort", key="off_k_ort")
 
-            with col_off2:
-                offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key="offert_nr")
-                off_datum = st.date_input("Offertdatum", value=date.today(), key="off_datum")
-                off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key="off_giltig")
-
-            submit_kund = st.form_submit_button("Bekräfta kunduppgifter")
+        with col_off2:
+            offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key="offert_nr")
+            off_datum = st.date_input("Offertdatum", value=date.today(), key="off_datum")
+            off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key="off_giltig")
 
         st.divider()
         st.markdown("#### 2. Lägg till offertrader")
@@ -548,13 +545,29 @@ with tabs[1]:
                 st.success(f"Lade till '{art_row['Artikel']}' i offerten.")
                 st.rerun()
 
+        # HANTERA TEMPORÄRA OFFERTRADER & BORTTAGNING AV ENSKILD RAD
         if st.session_state.temp_offert_items:
             st.markdown("##### Offertrader:")
-            st.dataframe(pd.DataFrame(st.session_state.temp_offert_items), use_container_width=True)
+            off_df_temp = pd.DataFrame(st.session_state.temp_offert_items)
+            st.dataframe(off_df_temp, use_container_width=True)
 
-            col_btn1, col_btn2 = st.columns([1, 4])
-            with col_btn1:
-                if st.button("❌ Töm offertrader"):
+            col_del1, col_del2, col_del3 = st.columns([2, 2, 3])
+            
+            with col_del1:
+                # Välj vilken rad (index) som ska tas bort
+                rad_options = [f"Rad {i}: {item['Artikel']}" for i, item in enumerate(st.session_state.temp_offert_items)]
+                rad_att_ta_bort = st.selectbox("Välj rad att ta bort:", options=range(len(rad_options)), format_func=lambda x: rad_options[x], key="select_del_row")
+            
+            with col_del2:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("🗑️ Ta bort markerad rad"):
+                    removed = st.session_state.temp_offert_items.pop(rad_att_ta_bort)
+                    st.success(f"Tog bort '{removed['Artikel']}' från offerten.")
+                    st.rerun()
+
+            with col_del3:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("❌ Töm alla offertrader"):
                     st.session_state.temp_offert_items = []
                     st.rerun()
 
