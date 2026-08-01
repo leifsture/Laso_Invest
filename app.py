@@ -200,7 +200,7 @@ def generate_pdf_file(customer_name, records, filepath):
         try: 
             t_tim = int(float(row["Timmar"]))
             t_pris = float(row["Timpris"])
-            t_tot = float(row["Totalt"])
+            t_tot = t_tim * t_pris
         except ValueError: 
             t_tim, t_pris, t_tot = 0, 0.0, 0.0
             
@@ -288,7 +288,7 @@ def generate_offert_pdf(offertnr, records, filepath):
         try:
             antal = int(float(row["Antal"]))
             apris = float(row["A_Pris"])
-            tot = float(row["Totalt"])
+            tot = antal * apris
         except ValueError:
             antal, apris, tot = 0, 0.0, 0.0
             
@@ -397,7 +397,6 @@ with tabs[0]:
     with col_b:
         val_art = st.selectbox("Välj Artikel", options=art_options, index=0)
     with col_c:
-        # ENBART HELTAL
         antal_val = st.number_input("Antal/Timmar", min_value=1, value=1, step=1)
     with col_d:
         desc_val = st.text_input("Beskrivning (frivillig)", key="ent_desc_val")
@@ -464,7 +463,7 @@ with tabs[0]:
                         "Beskrivning": item["Beskrivning"],
                         "Timmar": str(item["Timmar"]),
                         "Timpris": str(item["Timpris"]),
-                        "Totalt": str(item["Totalt"])
+                        "Totalt": str(item["Timmar"] * item["Timpris"])
                     })
 
                 df_data = pd.concat([df_data, pd.DataFrame(new_rows)], ignore_index=True)
@@ -523,7 +522,6 @@ with tabs[1]:
         with col_oa:
             val_off_art = st.selectbox("Välj Artikel/Tjänst", options=art_options_off, key="val_off_art")
         with col_ob:
-            # ENBART HELTAL
             off_antal = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key="off_antal")
         with col_oc:
             off_desc = st.text_input("Beskrivning / Specifikation (Valfri)", key="off_desc")
@@ -547,13 +545,18 @@ with tabs[1]:
                 st.success(f"Lade till '{art_row['Artikel']}' i offerten.")
                 st.rerun()
 
-        # REDIGERBAR TABELL FÖR OFFERTRADER (Radera rader med Delete)
+        # REDIGERBAR TABELL MED AUTOMATISK OMRÄKNING AV TOTALT
         if st.session_state.temp_offert_items:
             st.markdown("##### Offertrader:")
-            st.caption("💡 *Klicka på rutan längst till vänster för raden du vill ta bort och tryck **Delete** på tangentbordet.*")
+            st.caption("💡 *Ändra Antal direkt i tabellen så räknas Totalt om automatiskt. För att ta bort en rad: markera rutan längst till vänster och tryck Delete.*")
 
             off_df_temp = pd.DataFrame(st.session_state.temp_offert_items)
             
+            # Beräkna om Totalt
+            off_df_temp["Antal"] = pd.to_numeric(off_df_temp["Antal"], errors="coerce").fillna(1).astype(int)
+            off_df_temp["A_Pris"] = pd.to_numeric(off_df_temp["A_Pris"], errors="coerce").fillna(0.0)
+            off_df_temp["Totalt"] = off_df_temp["Antal"] * off_df_temp["A_Pris"]
+
             edited_off_df = st.data_editor(
                 off_df_temp,
                 use_container_width=True,
@@ -564,12 +567,16 @@ with tabs[1]:
                     "Beskrivning": st.column_config.TextColumn("Beskrivning"),
                     "Antal": st.column_config.NumberColumn("Antal/Timmar", step=1, format="%d"),
                     "A_Pris": st.column_config.NumberColumn("A-pris", format="%.2f kr"),
-                    "Totalt": st.column_config.NumberColumn("Totalt", format="%.2f kr"),
+                    "Totalt": st.column_config.NumberColumn("Totalt", format="%.2f kr", disabled=True),
                 },
                 key="editor_temp_offert"
             )
 
-            # Uppdatera session state om användaren tog bort/redigerade rader i tabellen
+            # Uppdatera och räkna om session state
+            edited_off_df["Antal"] = pd.to_numeric(edited_off_df["Antal"], errors="coerce").fillna(1).astype(int)
+            edited_off_df["A_Pris"] = pd.to_numeric(edited_off_df["A_Pris"], errors="coerce").fillna(0.0)
+            edited_off_df["Totalt"] = edited_off_df["Antal"] * edited_off_df["A_Pris"]
+            
             st.session_state.temp_offert_items = edited_off_df.to_dict(orient="records")
 
             if st.button("❌ Töm alla offertrader"):
@@ -585,6 +592,8 @@ with tabs[1]:
                 else:
                     new_off_rows = []
                     for item in st.session_state.temp_offert_items:
+                        antal_int = int(float(item["Antal"]))
+                        apris_flt = float(item["A_Pris"])
                         new_off_rows.append({
                             "Offertnr": offert_nr,
                             "Offertdatum": str(off_datum),
@@ -597,9 +606,9 @@ with tabs[1]:
                             "Artikelnr": item["Artikelnr"],
                             "Artikel": item["Artikel"],
                             "Beskrivning": item["Beskrivning"],
-                            "Antal": str(int(float(item["Antal"]))),
-                            "A_Pris": str(item["A_Pris"]),
-                            "Totalt": str(item["Totalt"]),
+                            "Antal": str(antal_int),
+                            "A_Pris": str(apris_flt),
+                            "Totalt": str(antal_int * apris_flt),
                             "Status": "Skapad"
                         })
 
@@ -618,7 +627,13 @@ with tabs[1]:
             off_lista = df_offert_curr["Offertnr"].unique().tolist()
             val_off_nr = st.selectbox("Välj Offert för utskrift/PDF:", options=off_lista)
 
-            selected_off_df = df_offert_curr[df_offert_curr["Offertnr"] == val_off_nr]
+            selected_off_df = df_offert_curr[df_offert_curr["Offertnr"] == val_off_nr].copy()
+            
+            # Säkerställ dynamisk omräkning i sparad vy
+            selected_off_df["Antal_num"] = pd.to_numeric(selected_off_df["Antal"], errors="coerce").fillna(0)
+            selected_off_df["A_Pris_num"] = pd.to_numeric(selected_off_df["A_Pris"], errors="coerce").fillna(0)
+            selected_off_df["Totalt"] = (selected_off_df["Antal_num"] * selected_off_df["A_Pris_num"]).astype(str)
+
             st.dataframe(selected_off_df[["Offertnr", "Offertdatum", "Kund_Namn", "Artikel", "Antal", "A_Pris", "Totalt"]], use_container_width=True)
 
             offert_pdf_filename = f"Offert_{val_off_nr}_{selected_off_df.iloc[0]['Kund_Namn']}.pdf"
@@ -737,6 +752,12 @@ with tabs[3]:
             },
             key="editor_registrerade_poster"
         )
+
+        # Räkna om Totalt vid sparande
+        edited_data["Timmar_num"] = pd.to_numeric(edited_data["Timmar"], errors="coerce").fillna(0)
+        edited_data["Timpris_num"] = pd.to_numeric(edited_data["Timpris"], errors="coerce").fillna(0)
+        edited_data["Totalt"] = (edited_data["Timmar_num"] * edited_data["Timpris_num"]).astype(str)
+        edited_data = edited_data.drop(columns=["Timmar_num", "Timpris_num"], errors="ignore")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
