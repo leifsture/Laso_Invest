@@ -346,52 +346,67 @@ with tabs[0]:
 # FLIK 2: ARTIKELDATABAS
 # ==========================================
 with tabs[1]:
-    st.subheader("Hantera Artikeldatabas")
+    st.subheader("📦 Hantera Artikeldatabas")
     
-    # Knapp för att helt återställa standardartiklarna om listan blivit korrupt
-    if st.button("🔄 Återställ alla standardartiklar"):
-        df_art = default_articles()
-        st.success("Artikeldatabasen har återställts med alla standardartiklar!")
+    col_tb1, col_tb2 = st.columns([2, 1])
+    with col_tb1:
+        st.markdown("#### Sparade artiklar (Redigera direkt i tabellen)")
+        st.caption("💡 *Klicka direkt i tabellen nedan för att ändra priser, artikelnamn m.m. Klicka sedan på spara-knappen.*")
+    with col_tb2:
+        if st.button("🔄 Återställ till standardartiklar"):
+            df_art = default_articles()
+            st.success("Artikeldatabasen har återställts!")
+            st.rerun()
+
+    # 1. DIREKTREDIGERING I TABELLEN
+    edited_df = st.data_editor(
+        df_art,
+        use_container_width=True,
+        num_rows="dynamic",  # Gör att man även kan lägga till/radera rader direkt i tabellen!
+        height=450,
+        column_config={
+            "Kategori": st.column_config.SelectboxColumn("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], required=True),
+            "Artikelnr": st.column_config.TextColumn("Artikelnr", required=True),
+            "Artikel": st.column_config.TextColumn("Artikel / Benämning", required=True),
+            "ArtPris": st.column_config.TextColumn("Pris (SEK)", required=True),
+        },
+        key="editor_artiklar"
+    )
+
+    if st.button("💾 Spara alla ändringar i tabellen", type="primary"):
+        # Rensa eventuella tomma rader innan vi sparar
+        cleaned_df = edited_df[edited_df["Artikelnr"].str.strip() != ""].copy()
+        save_articles(cleaned_df)
+        st.success("Alla ändringar i artikeldatabasen har sparats!")
         st.rerun()
 
     st.divider()
 
-    col_left, col_right = st.columns([1, 2])
+    # 2. SNABBFORMULÄR FÖR ATT LÄGGA TILL NY ARTIKEL
+    st.markdown("#### Snabbformulär: Lägg till ny artikel")
+    col_a1, col_a2, col_a3, col_a4 = st.columns([2, 2, 3, 2])
+    with col_a1:
+        new_cat = st.selectbox("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], key="new_cat")
+    with col_a2:
+        new_nr = st.text_input("Artikelnr", key="new_nr")
+    with col_a3:
+        new_namn = st.text_input("Artikelnamn", key="new_namn")
+    with col_a4:
+        new_pris = st.text_input("Pris (SEK)", key="new_pris")
 
-    with col_left:
-        st.markdown("#### Lägg till / Ändra pris")
-        cat_art = st.selectbox("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"])
-        nr_art = st.text_input("Artikelnr")
-        namn_art = st.text_input("Artikelnamn")
-        pris_art = st.text_input("Pris (SEK)")
-
-        if st.button("💾 Spara / Uppdatera Artikel"):
-            if nr_art and namn_art and pris_art:
-                idx = df_art[df_art["Artikelnr"] == nr_art].index
-                if not idx.empty:
-                    df_art.loc[idx, "Kategori"] = cat_art
-                    df_art.loc[idx, "Artikel"] = namn_art
-                    df_art.loc[idx, "ArtPris"] = pris_art
-                else:
-                    new_art = pd.DataFrame([{"Kategori": cat_art, "Artikelnr": nr_art, "Artikel": namn_art, "ArtPris": pris_art}])
-                    df_art = pd.concat([df_art, new_art], ignore_index=True)
-                save_articles(df_art)
-                st.success("Artikeln uppdaterades!")
-                st.rerun()
+    if st.button("➕ Lägg till ny artikel i listan"):
+        if new_nr and new_namn and new_pris:
+            # Kontrollera om artikelnr redan finns
+            if not df_art[df_art["Artikelnr"] == new_nr].empty:
+                st.error(f"Artikelnr {new_nr} finns redan! Ändra priset direkt i tabellen ovan istället.")
             else:
-                st.warning("Fyll i alla fält.")
-
-    with col_right:
-        st.markdown("#### Sparade artiklar")
-        st.dataframe(df_art, use_container_width=True, height=400)
-
-        art_to_del = st.selectbox("Ta bort artikel:", options=[""] + list(df_art["Artikelnr"].unique()))
-        if st.button("❌ Ta bort vald artikel"):
-            if art_to_del:
-                df_art = df_art[df_art["Artikelnr"] != art_to_del]
+                new_row = pd.DataFrame([{"Kategori": new_cat, "Artikelnr": new_nr, "Artikel": new_namn, "ArtPris": new_pris}])
+                df_art = pd.concat([df_art, new_row], ignore_index=True)
                 save_articles(df_art)
-                st.success(f"Artikel {art_to_del} raderades!")
+                st.success(f"Artikeln '{new_namn}' lades till!")
                 st.rerun()
+        else:
+            st.warning("Fyll i alla fält för att lägga till en ny artikel.")
 
 # ==========================================
 # FLIK 3: REDIGERA / TA BORT POSTER
