@@ -193,7 +193,7 @@ def generate_pdf_file(customer_name, records, filepath):
     table_data = [[
         Paragraph("<b>Datum</b>", meta_bold),
         Paragraph("<b>Artikel / Åtgärd / Beskrivning</b>", meta_bold),
-        Paragraph("<b>Antal/Enh</b>", meta_bold),
+        Paragraph("<b>Antal/Timmar</b>", meta_bold),
         Paragraph("<b>A-pris</b>", meta_bold),
         Paragraph("<b>Belopp (SEK)</b>", meta_bold)
     ]]
@@ -276,7 +276,7 @@ def generate_offert_pdf(offertnr, records, filepath):
     table_data = [[
         Paragraph("<b>Pos</b>", meta_bold),
         Paragraph("<b>Artikel / Beskrivning</b>", meta_bold),
-        Paragraph("<b>Antal/Enh</b>", meta_bold),
+        Paragraph("<b>Antal/Timmar</b>", meta_bold), # ÄNDRAD FRÅN Antal/Enh TILL Antal/Timmar
         Paragraph("<b>A-pris</b>", meta_bold),
         Paragraph("<b>Totalt (exkl. moms)</b>", meta_bold)
     ]]
@@ -320,7 +320,6 @@ def generate_offert_pdf(offertnr, records, filepath):
     story.append(t)
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=10, spaceAfter=10))
 
-    # Summeringstabell
     sum_data = [
         [Paragraph("Netto exkl. moms:", meta_style), Paragraph(f"{totalt_exkl:.2f} kr", meta_style)],
         [Paragraph("Moms (25%):", meta_style), Paragraph(f"{moms:.2f} kr", meta_style)],
@@ -334,7 +333,6 @@ def generate_offert_pdf(offertnr, records, filepath):
     ]))
     story.append(sum_table)
 
-    # Villkor
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=15, spaceAfter=10))
     villkor_text = f"<b>Betalningsvillkor:</b> 30 dagar netto efter slutfört arbete / fakturering.<br/>Offerten är giltig t.o.m. <b>{first_rec['Giltig_Tom']}</b>."
     story.append(Paragraph(villkor_text, meta_style))
@@ -365,8 +363,8 @@ with tabs[0]:
     col1, col2 = st.columns(2)
     
     with col1:
-        k_orgnr = st.text_input("Personnr / Org.nr", key="k_orgnr")
         k_namn = st.text_input("Kundnamn *", key="k_namn")
+        k_orgnr = st.text_input("Personnr / Org.nr", key="k_orgnr")
         k_adress = st.text_input("Kund Adress", key="k_adress")
         k_postnr = st.text_input("Kund Postnr", key="k_postnr")
         k_ort = st.text_input("Kund Ort", key="k_ort")
@@ -473,7 +471,7 @@ with tabs[0]:
                 st.rerun()
 
 # ==========================================
-# FLIK 2: OFFERTER (NY FLIK)
+# FLIK 2: OFFERTER
 # ==========================================
 with tabs[1]:
     st.subheader("📑 Hantera & Skapa Offerter")
@@ -482,7 +480,6 @@ with tabs[1]:
 
     with sub_tab1:
         st.markdown("#### 1. Offert- & Kundinformation")
-        col_off1, col_off2 = st.columns(2)
         
         # Generera nytt offertnummer automatiskt
         next_offert_nr = "OFF-1001"
@@ -492,18 +489,24 @@ with tabs[1]:
             if not nums_numeric.empty:
                 next_offert_nr = f"OFF-{int(nums_numeric.max() + 1)}"
 
-        with col_off1:
-            offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key="offert_nr")
-            off_k_namn = st.text_input("Kundnamn *", key="off_k_namn")
-            off_k_orgnr = st.text_input("Org.nr / Personnr", key="off_k_orgnr")
+        # Formulär för att tillåta Enter/Tab utan för tidig submit
+        with st.form("offert_kund_form"):
+            col_off1, col_off2 = st.columns(2)
+            
+            with col_off1:
+                off_k_namn = st.text_input("Kundnamn *", key="off_k_namn")
+                off_k_orgnr = st.text_input("Org.nr / Personnr", key="off_k_orgnr")
+                off_k_adress = st.text_input("Kund Adress", key="off_k_adress")
+                col_p, col_o = st.columns(2)
+                with col_p: off_k_post = st.text_input("Postnr", key="off_k_post")
+                with col_o: off_k_ort = st.text_input("Ort", key="off_k_ort")
 
-        with col_off2:
-            off_datum = st.date_input("Offertdatum", value=date.today(), key="off_datum")
-            off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key="off_giltig")
-            off_k_adress = st.text_input("Kund Adress", key="off_k_adress")
-            col_p, col_o = st.columns(2)
-            with col_p: off_k_post = st.text_input("Postnr", key="off_k_post")
-            with col_o: off_k_ort = st.text_input("Ort", key="off_k_ort")
+            with col_off2:
+                offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key="offert_nr")
+                off_datum = st.date_input("Offertdatum", value=date.today(), key="off_datum")
+                off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key="off_giltig")
+
+            submit_kund = st.form_submit_button("Bekräfta kunduppgifter")
 
         st.divider()
         st.markdown("#### 2. Lägg till offertrader")
@@ -657,17 +660,20 @@ with tabs[2]:
     st.divider()
 
     st.markdown("#### Snabbformulär: Lägg till ny artikel")
-    col_a1, col_a2, col_a3, col_a4 = st.columns([2, 2, 3, 2])
-    with col_a1:
-        new_cat = st.selectbox("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], key="new_cat")
-    with col_a2:
-        new_nr = st.text_input("Artikelnr", key="new_nr")
-    with col_a3:
-        new_namn = st.text_input("Artikelnamn", key="new_namn")
-    with col_a4:
-        new_pris = st.text_input("Pris (t.ex. 1250)", key="new_pris")
+    with st.form("new_article_form"):
+        col_a1, col_a2, col_a3, col_a4 = st.columns([2, 2, 3, 2])
+        with col_a1:
+            new_cat = st.selectbox("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], key="new_cat")
+        with col_a2:
+            new_nr = st.text_input("Artikelnr", key="new_nr")
+        with col_a3:
+            new_namn = st.text_input("Artikelnamn", key="new_namn")
+        with col_a4:
+            new_pris = st.text_input("Pris (t.ex. 1250)", key="new_pris")
 
-    if st.button("➕ Lägg till ny artikel i listan"):
+        submit_art = st.form_submit_button("➕ Lägg till ny artikel i listan")
+
+    if submit_art:
         if new_nr and new_namn and new_pris:
             if not df_art[df_art["Artikelnr"] == new_nr].empty:
                 st.error(f"Artikelnr {new_nr} finns redan!")
@@ -761,17 +767,20 @@ with tabs[4]:
             st.divider()
             st.subheader("✉️ Skicka underlag via E-post")
             
-            col_e1, col_e2 = st.columns(2)
-            with col_e1:
-                epost_avsandare = st.text_input("Din Gmail-adress (Avsändare)", value="")
-                epost_losen = st.text_input("Ditt App-lösenord (Gmail)", type="password", help="Krävs för Gmail SMTP")
-            with col_e2:
-                epost_mottagare = st.text_input("Mottagarens E-postadress")
-                epost_amne = st.text_input("Ämne", value=f"Fakturaunderlag - {val_kund}")
+            with st.form("email_form"):
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    epost_avsandare = st.text_input("Din Gmail-adress (Avsändare)", value="")
+                    epost_losen = st.text_input("Ditt App-lösenord (Gmail)", type="password", help="Krävs för Gmail SMTP")
+                with col_e2:
+                    epost_mottagare = st.text_input("Mottagarens E-postadress")
+                    epost_amne = st.text_input("Ämne", value=f"Fakturaunderlag - {val_kund}")
 
-            epost_meddelande = st.text_area("Meddelande", value=f"Hej!\n\nHär kommer fakturaunderlaget för {val_kund}.\n\nMed vänlig hälsning,\nLaso Invest AB")
+                epost_meddelande = st.text_area("Meddelande", value=f"Hej!\n\nHär kommer fakturaunderlaget för {val_kund}.\n\nMed vänlig hälsning,\nLaso Invest AB")
 
-            if st.button("✉️ Skicka E-post med PDF"):
+                submit_email = st.form_submit_button("✉️ Skicka E-post med PDF")
+
+            if submit_email:
                 if not os.path.exists(pdf_filename):
                     generate_pdf_file(val_kund, kund_df, pdf_filename)
 
