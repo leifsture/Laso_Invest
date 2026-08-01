@@ -467,32 +467,44 @@ with tabs[2]:
             st.success("Databasen har uppdaterats och sparats!")
             st.rerun()
 
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+
 # ==========================================
-# FLIK 4: FAKTURAUNDERLAG (PDF)
+# FLIK 4: FAKTURAUNDERLAG (PDF) & E-POST
 # ==========================================
 with tabs[3]:
-    st.subheader("Skapa PDF-Fakturaunderlag")
+    st.subheader("Skapa PDF-Fakturaunderlag & Skicka E-post")
     
-    # 1. Ladda om databasen direkt så att nyligen tillagda kunder syns direkt
-    df_fresh = load_data()
-    
-    if df_fresh.empty:
+    if os.path.exists(DATA_FILE):
+        df_pdf = pd.read_csv(DATA_FILE, dtype=str).fillna("")
+    else:
+        df_pdf = pd.DataFrame(columns=DATA_COLUMNS)
+
+    if df_pdf.empty:
         st.info("Inga registrerade underlag finns ännu.")
     else:
-        # 2. Hämta alla unika kundnamn, rensa tomma rader och sortera i bokstavsordning
-        kunder = sorted(list(set(clean_str(k) for k in df_fresh["Kund_Namn"].unique() if clean_str(k) != "")))
-        
-        if not kunder:
-            st.info("Inga registrerade kunder hittades.")
-        else:
-            val_kund = st.selectbox("Välj Kund:", options=kunder)
-            kund_df = df_fresh[df_fresh["Kund_Namn"] == val_kund]
+        kunder_lista = list(filter(None, df_pdf["Kund_Namn"].str.strip().unique()))
+        kunder_lista.sort()
 
+        if not kunder_lista:
+            st.warning("Hittade inga kunder i databasen.")
+        else:
+            val_kund = st.radio("Välj kund för fakturaunderlag:", options=kunder_lista, key="radio_kund_pdf")
+            kund_df = df_pdf[df_pdf["Kund_Namn"].str.strip() == val_kund]
+
+            st.write(f"**Antal rader för {val_kund}:** {len(kund_df)}")
             pdf_filename = f"Fakturaunderlag_{val_kund}_{date.today()}.pdf"
 
+            st.divider()
+            
+            # 1. Skapa PDF
             if st.button("📄 Generera PDF-Fakturaunderlag", type="primary"):
                 if generate_pdf_file(val_kund, kund_df, pdf_filename):
-                    st.success("PDF skapades framgångsrikt!")
+                    st.success(f"PDF skapades för {val_kund}!")
                     with open(pdf_filename, "rb") as f:
                         st.download_button(
                             label="⬇️ Ladda ner PDF",
@@ -500,3 +512,51 @@ with tabs[3]:
                             file_name=pdf_filename,
                             mime="application/pdf"
                         )
+
+            # 2. Skicka e-post direkt
+            st.divider()
+            st.subheader("✉️ Skicka underlag via E-post")
+            
+            col_e1, col_e2 = st.columns(2)
+            with col_e1:
+                epost_avsandare = st.text_input("Din Gmail-adress (Avsändare)", value="")
+                epost_losen = st.text_input("Ditt App-lösenord (Gmail)", type="password", help="Krävs för Gmail SMTP")
+            with col_e2:
+                epost_mottagare = st.text_input("Mottagarens E-postadress")
+                epost_amne = st.text_input("Ämne", value=f"Fakturaunderlag - {val_kund}")
+
+            epost_meddelande = st.text_area("Meddelande", value=f"Hej!\n\nHär kommer fakturaunderlaget för {val_kund}.\n\nMed vänlig hälsning,\nLaso Invest AB")
+
+            if st.button("✉️ Skicka E-post med PDF"):
+                if not os.path.exists(pdf_filename):
+                    # Generera PDF om den inte redan skapats
+                    generate_pdf_file(val_kund, kund_df, pdf_filename)
+
+                if not epost_avsandare or not epost_losen or not epost_mottagare:
+                    st.error("Fyll i avsändare, lösenord och mottagare!")
+                else:
+                    try:
+                        msg = MIMEMultipart()
+                        msg['From'] = epost_avsandare
+                        msg['To'] = epost_mottagare
+                        msg['Subject'] = epost_amne
+                        msg.attach(MIMEText(epost_meddelande, 'plain'))
+
+                        # Koppla bilagan
+                        with open(pdf_filename, "rb") as attachment:
+                            part = MIMEBase('application', 'octet-stream')
+                            part.set_payload(attachment.read())
+                            encoders.encode_base64(part)
+                            part.add_header('Content-Disposition', f"attachment; filename= {pdf_filename}")
+                            msg.attach(part)
+
+                        # Koppla upp mot Gmail SMTP
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login(epost_avsandare, epost_losen)
+                        server.send_message(msg)
+                        server.quit()
+
+                        st.success(f"E-post skickades framgångsrikt till {epost_mottagare}!")
+                    except Exception as e:
+                        st.error(f"Kunde inte skicka e-post: {e}")
