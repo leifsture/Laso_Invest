@@ -20,7 +20,6 @@ DATA_FILE = "laso_invest_data.csv"
 ARTICLE_FILE = "laso_invest_artiklar.csv"
 OFFERT_FILE = "laso_invest_offerter.csv"
 
-# Tillagd kolumn: Skapad_Datum för sortering på när underlaget registrerades
 DATA_COLUMNS = [
     "ID", "Datum", "Skapad_Datum", "Artikelnr", "Artikel", "Kategori",
     "Kund_OrgNr", "Kund_Namn", "Kund_Adress", "Kund_Postnr", "Kund_Ort",
@@ -111,7 +110,6 @@ def load_data():
             df = pd.read_csv(DATA_FILE, dtype=str).fillna("")
             for col in DATA_COLUMNS:
                 if col not in df.columns: 
-                    # Om Skapad_Datum saknas i gamla poster, använd vanliga Datum som fallback
                     df[col] = df["Datum"] if col == "Skapad_Datum" else ""
             return df[DATA_COLUMNS]
         except Exception: return pd.DataFrame(columns=DATA_COLUMNS)
@@ -352,19 +350,8 @@ if "temp_items" not in st.session_state:
 if "temp_offert_items" not in st.session_state:
     st.session_state.temp_offert_items = []
 
-# Nollställer alla formulärfält
-def reset_register_form():
-    st.session_state["k_namn"] = ""
-    st.session_state["k_orgnr"] = ""
-    st.session_state["k_adress"] = ""
-    st.session_state["k_postnr"] = ""
-    st.session_state["k_ort"] = ""
-    st.session_state["f_namn"] = ""
-    st.session_state["f_adress"] = ""
-    st.session_state["f_postnr"] = ""
-    st.session_state["f_ort"] = ""
-    st.session_state["ent_desc_val"] = ""
-    st.session_state.temp_items = []
+if "form_counter" not in st.session_state:
+    st.session_state.form_counter = 0
 
 df_data = load_data()
 df_art = load_articles()
@@ -379,20 +366,23 @@ tabs = st.tabs(["➕ Registrera arbete", "📑 Offerter", "📦 Artikeldatabas",
 # ==========================================
 with tabs[0]:
     st.subheader("1. Kund & Fakturauppgifter")
-    col1, col2 = st.columns(2)
     
+    # Använd form_counter i key för att tvinga fram ett rent formulär vid sparande
+    fc = st.session_state.form_counter
+
+    col1, col2 = st.columns(2)
     with col1:
-        k_namn = st.text_input("Kundnamn *", key="k_namn")
-        k_orgnr = st.text_input("Personnr / Org.nr", key="k_orgnr")
-        k_adress = st.text_input("Kund Adress", key="k_adress")
-        k_postnr = st.text_input("Kund Postnr", key="k_postnr")
-        k_ort = st.text_input("Kund Ort", key="k_ort")
+        k_namn = st.text_input("Kundnamn *", key=f"k_namn_{fc}")
+        k_orgnr = st.text_input("Personnr / Org.nr", key=f"k_orgnr_{fc}")
+        k_adress = st.text_input("Kund Adress", key=f"k_adress_{fc}")
+        k_postnr = st.text_input("Kund Postnr", key=f"k_postnr_{fc}")
+        k_ort = st.text_input("Kund Ort", key=f"k_ort_{fc}")
 
     with col2:
-        f_namn = st.text_input("Fakturanamn (Om annan)", key="f_namn")
-        f_adress = st.text_input("Fakturaadress", key="f_adress")
-        f_postnr = st.text_input("Faktura Postnr", key="f_postnr")
-        f_ort = st.text_input("Faktura Ort", key="f_ort")
+        f_namn = st.text_input("Fakturanamn (Om annan)", key=f"f_namn_{fc}")
+        f_adress = st.text_input("Fakturaadress", key=f"f_adress_{fc}")
+        f_postnr = st.text_input("Faktura Postnr", key=f"f_postnr_{fc}")
+        f_ort = st.text_input("Faktura Ort", key=f"f_ort_{fc}")
 
     st.divider()
     st.subheader("2. Lägg till artikel/åtgärd")
@@ -410,13 +400,13 @@ with tabs[0]:
 
     col_a, col_b, col_c, col_d = st.columns([2, 4, 2, 4])
     with col_a:
-        datum_val = st.date_input("Datum", value=date.today())
+        datum_val = st.date_input("Datum", value=date.today(), key=f"datum_{fc}")
     with col_b:
-        val_art = st.selectbox("Välj Artikel", options=art_options, index=0)
+        val_art = st.selectbox("Välj Artikel", options=art_options, index=0, key=f"art_{fc}")
     with col_c:
-        antal_val = st.number_input("Antal/Timmar", min_value=1, value=1, step=1)
+        antal_val = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key=f"antal_{fc}")
     with col_d:
-        desc_val = st.text_input("Beskrivning (frivillig)", key="ent_desc_val")
+        desc_val = st.text_input("Beskrivning (frivillig)", key=f"desc_{fc}")
 
     if st.button("➕ Lägg till rad i underlag"):
         if val_art == "-- Välj artikel --":
@@ -466,7 +456,7 @@ with tabs[0]:
                     new_rows.append({
                         "ID": str(start_id + idx),
                         "Datum": item["Datum"],
-                        "Skapad_Datum": idag_str,  # Dagens datum när det skapades i systemet
+                        "Skapad_Datum": idag_str,
                         "Artikelnr": item["Artikelnr"],
                         "Artikel": item["Artikel"],
                         "Kategori": item["Kategori"],
@@ -488,8 +478,9 @@ with tabs[0]:
                 df_data = pd.concat([df_data, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df_data)
                 
-                # Nollställ hela formuläret och rensa alla fält
-                reset_register_form()
+                # Nollställ allt genom att räkna upp räknaren och tömma tillfälliga rader
+                st.session_state.temp_items = []
+                st.session_state.form_counter += 1
                 st.success(f"Underlaget för {k_namn} har sparats och formuläret har rensats!")
                 st.rerun()
 
@@ -793,7 +784,6 @@ with tabs[4]:
     if df_pdf.empty:
         st.info("Inga registrerade underlag finns ännu.")
     else:
-        # Om Skapad_Datum saknas på äldre rader i CSV-filen, fyll i vanliga Datum som fallback
         if "Skapad_Datum" not in df_pdf.columns:
             df_pdf["Skapad_Datum"] = df_pdf["Datum"]
 
@@ -803,7 +793,6 @@ with tabs[4]:
         if df_pdf_valid.empty:
             st.warning("Hittade inga kunder i databasen.")
         else:
-            # Gruppera per kund och hämta det SENAST SKAPADE DATUMET och MAX ID
             kund_summary = (
                 df_pdf_valid.groupby("Kund_Namn_Clean")
                 .agg(
@@ -813,12 +802,10 @@ with tabs[4]:
                 .reset_index()
             )
 
-            # Sortera på skapandedatum + max ID (senast skapade/tillagda hamnar överst)
             kund_summary = kund_summary.sort_values(
                 by=["Senaste_Skapad", "Max_ID"], ascending=[False, False]
             )
 
-            # Bygg alternativ med skapandedatum
             options_map = {}
             for _, row in kund_summary.iterrows():
                 k_name = row["Kund_Namn_Clean"]
