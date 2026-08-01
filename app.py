@@ -427,25 +427,44 @@ with tabs[1]:
             st.warning("Fyll i alla fält för att lägga till en ny artikel.")
 
 # ==========================================
-# FLIK 3: REDIGERA / TA BORT POSTER
+# FLIK 3: REDIGERA / TA BORT
 # ==========================================
-with tabs[2]:
-    st.subheader("Registrerade poster i databasen")
-    if df_data.empty:
-        st.info("Inga poster sparade ännu.")
-    else:
-        st.dataframe(df_data[["ID", "Datum", "Kund_Namn", "Artikelnr", "Artikel", "Beskrivning", "Timmar", "Totalt"]], use_container_width=True)
+with tabs[3]:
+    st.subheader("✏️ Redigera / Ta bort registrerade arbeten")
+    st.caption("💡 *Markera rader längst till vänster för att radera dem (med Delete-tangenten), eller klicka direkt i cellerna för att ändra text/antal/pris.*")
 
-        st.divider()
-        col_del1, col_del2 = st.columns(2)
-        with col_del1:
-            id_to_del = st.selectbox("Välj ID att radera:", options=[""] + list(df_data["ID"].unique()))
-            if st.button("❌ Radera vald rad"):
-                if id_to_del:
-                    df_data = df_data[df_data["ID"] != id_to_del]
-                    save_data(df_data)
-                    st.success(f"Rad {id_to_del} raderades!")
-                    st.rerun()
+    # Läs in sparade arbeten
+    df_arb = load_work()
+
+    if df_arb.empty:
+        st.info("Det finns inga registrerade arbeten ännu.")
+    else:
+        # 1. EXCEL-EDITERING DIRECT I TABELLEN
+        edited_arb = st.data_editor(
+            df_arb,
+            use_container_width=True,
+            num_rows="dynamic",  # Gör det möjligt att markera och radera rader som i Excel!
+            height=500,
+            column_config={
+                "Datum": st.column_config.TextColumn("Datum", required=True),
+                "Kund": st.column_config.TextColumn("Kund", required=True),
+                "Artikel": st.column_config.TextColumn("Artikel", required=True),
+                "Antal": st.column_config.TextColumn("Antal", required=True),
+                "ArtPris": st.column_config.TextColumn("Pris", required=True),
+                "Siffra": st.column_config.TextColumn("Fakturanr / Ordernr"),
+                "Kommentar": st.column_config.TextColumn("Kommentar"),
+            },
+            key="editor_registrerade_arbeten"
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # 2. SPARA-KNAPP FOR ATT FASTSTÄLLA ÄNDRINGAR / RADERINGAR
+        if st.button("💾 Spara alla ändringar i arbetstabellen", type="primary"):
+            # Spara hela den uppdaterade tabellen (där borttagna rader automatiskt försvunnit)
+            save_work(edited_arb)
+            st.success("Tabellen har uppdaterats och sparats!")
+            st.rerun()
 
 # ==========================================
 # FLIK 4: FAKTURAUNDERLAG (PDF)
