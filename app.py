@@ -349,14 +349,17 @@ with tabs[4]:
     st.subheader(f"Underlag för: {valdh_kund}")
     st.dataframe(kund_df, use_container_width=True)
 
-    tot_exkl = kund_df["Totalt_Exkl_Moms"].sum()
-    tot_moms = kund_df["Moms_25"].sum()
-    tot_inkl = kund_df["Totalt_Inkl_Moms"].sum()
+    # Omvandla säkert till float ifall värdena lästs in som strängar
+    tot_exkl = float(pd.to_numeric(kund_df["Totalt_Exkl_Moms"], errors="coerce").sum())
+    tot_moms = float(pd.to_numeric(kund_df["Moms_25"], errors="coerce").sum())
+    tot_inkl = float(pd.to_numeric(kund_df["Totalt_Inkl_Moms"], errors="coerce").sum())
 
     m_col1, m_col2, m_col3 = st.columns(3)
-    m_col1.metric("Totalt exkl. moms", f"{tot_exkl:,.2f} kr")
-    m_col2.metric("Moms (25%)", f"{tot_moms:,.2f} kr")
-    m_col3.metric("Totalt inkl. moms", f"{tot_inkl:,.2f} kr")
+    
+    # Formatera med standard .2f för att undvika syntaxfel
+    m_col1.metric("Totalt exkl. moms", f"{tot_exkl:.2f} kr")
+    m_col2.metric("Moms (25%)", f"{tot_moms:.2f} kr")
+    m_col3.metric("Totalt inkl. moms", f"{tot_inkl:.2f} kr")
   else:
     st.info("Det finns inget underlag att visa.")
 
