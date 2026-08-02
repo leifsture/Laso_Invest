@@ -1,265 +1,368 @@
-import hashlib
 import os
-from datetime import date
+import smtplib
 import pandas as pd
 import streamlit as st
+from datetime import date, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
-# ==========================================
-# CONSTANTS & FILE PATHS
-# ==========================================
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+
+st.set_page_config(page_title="Laso Invest AB – Tid, Fakturering & Offert", page_icon="💼", layout="wide")
+
 DATA_FILE = "laso_invest_data.csv"
-ARTIKEL_FILE = "laso_invest_artiklar.csv"
+ARTICLE_FILE = "laso_invest_artiklar.csv"
 OFFERT_FILE = "laso_invest_offerter.csv"
-USER_FILE = "laso_invest_anvandare.csv"
 
 DATA_COLUMNS = [
-    "Datum",
-    "Kund",
-    "Adress",
-    "Postnummer",
-    "Ort",
-    "Kategori",
-    "Artikel",
-    "Arbetsbeskrivning",
-    "Timmar",
-    "Timpris",
-    "Materialkostnad",
-    "Ovrigt",
-    "Totalt_Exkl_Moms",
-    "Moms_25",
-    "Totalt_Inkl_Moms",
+    "ID", "Datum", "Skapad_Datum", "Artikelnr", "Artikel", "Kategori",
+    "Kund_OrgNr", "Kund_Namn", "Kund_Adress", "Kund_Postnr", "Kund_Ort",
+    "Faktura_Namn", "Faktura_Adress", "Faktura_Postnr", "Faktura_Ort",
+    "Beskrivning", "Timmar", "Timpris", "Totalt"
 ]
-
-ARTIKEL_COLUMNS = ["Artikelnummer", "Artikelnamn", "Enhet", "A_Pris_Exkl_Moms"]
+ARTICLE_COLUMNS = ["Kategori", "Artikelnr", "Artikel", "ArtPris"]
 
 OFFERT_COLUMNS = [
-    "Offertnummer",
-    "Datum",
-    "Kund",
-    "Adress",
-    "Postnummer",
-    "Ort",
-    "Kategori",
-    "Beskrivning",
-    "Totalt_Exkl_Moms",
-    "Moms_25",
-    "Totalt_Inkl_Moms",
-    "Status",
+    "Offertnr", "Offertdatum", "Giltig_Tom", "Kund_OrgNr", "Kund_Namn", 
+    "Kund_Adress", "Kund_Postnr", "Kund_Ort", "Artikelnr", "Artikel", 
+    "Beskrivning", "Antal", "A_Pris", "Totalt", "Status"
 ]
 
-USER_COLUMNS = ["Anvandarnamn", "Losenord_Hash", "Roll"]
+DEFAULT_ARTICLES = [
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25100", "Artikel": "Volvo 50 D", "ArtPris": "500.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25101", "Artikel": "Förare grävmaskin", "ArtPris": "400.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25102", "Artikel": "Rotor encon, grip, centralsmörjning", "ArtPris": "160.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25103", "Artikel": "Grävskopa 60 cm", "ArtPris": "20.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25104", "Artikel": "Planeringsskopa 110 cm", "ArtPris": "30.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25105", "Artikel": "Smalskopa 20 cm", "ArtPris": "15.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25106", "Artikel": "Tjälkrok", "ArtPris": "15.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25107", "Artikel": "Kratta 160 cm", "ArtPris": "20.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25108", "Artikel": "Sop 160 cm", "ArtPris": "20.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25109", "Artikel": "Grip och tillsats för kunna dra på rot", "ArtPris": "40.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25110", "Artikel": "Planeringsbalk med rulle 200 cm", "ArtPris": "40.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25111", "Artikel": "Gallerskopa", "ArtPris": "30.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25112", "Artikel": "Pallgafflar", "ArtPris": "30.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25113", "Artikel": "Vägrensare, ex mellan vägräcken", "ArtPris": "25.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25114", "Artikel": "Lång skopa smal", "ArtPris": "25.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25115", "Artikel": "Buskröjare aggregat 100 cm", "ArtPris": "80.00"},
+    {"Kategori": "Grävmaskin Volvo 50D", "Artikelnr": "25116", "Artikel": "Hydraulisk trädklipp 20 cm", "ArtPris": "50.00"},
 
-KATEGORIER = ["Grävmaskin", "Traktor", "Övrigt"]
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25200", "Artikel": "Lundberg 6240 inkl förare", "ArtPris": "500.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25201", "Artikel": "Förare traktor", "ArtPris": "400.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25202", "Artikel": "Planeringsskopa 220 cm bred", "ArtPris": "30.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25203", "Artikel": "Pallgafflar, förlängningsgafflar", "ArtPris": "30.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25204", "Artikel": "Multiskopa, snö ex vingar 3,60 cm", "ArtPris": "60.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25205", "Artikel": "Grip på lastare", "ArtPris": "40.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25206", "Artikel": "Kranarm", "ArtPris": "30.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25207", "Artikel": "Sandspridare, Drivex, 1,5 kubik 2,5 ton", "ArtPris": "40.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25208", "Artikel": "Sandspridare fram skopa 800l", "ArtPris": "30.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25209", "Artikel": "1st Hyvelblad, isrivare 260 cm", "ArtPris": "40.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25210", "Artikel": "1st hyvel med hjulpar 180cm+", "ArtPris": "40.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25211", "Artikel": "Långskopa, bredd 80cm längd 185cm", "ArtPris": "25.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25212", "Artikel": "Skopa 2,00 snö, lättare material/matjord", "ArtPris": "30.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25213", "Artikel": "Grusfräs 2,00m", "ArtPris": "70.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25214", "Artikel": "Hydrauliska pallgafflar 150 längd", "ArtPris": "35.00"},
+    {"Kategori": "Traktor Lundberg 6240", "Artikelnr": "25215", "Artikel": "Hydraulisk slagklippare 200cm bred", "ArtPris": "120.00"},
 
-
-# ==========================================
-# HELPER FUNCTIONS - SECURITY & USERS
-# ==========================================
-def hash_password(password: str) -> str:
-  return hashlib.sha256(password.encode()).hexdigest()
-
-
-def load_users() -> pd.DataFrame:
-  if os.path.exists(USER_FILE):
-    try:
-      df = pd.read_csv(USER_FILE, dtype=str).fillna("")
-      for col in USER_COLUMNS:
-        if col not in df.columns:
-          df[col] = ""
-      return df[USER_COLUMNS]
-    except Exception:
-      pass
-
-  default_df = pd.DataFrame([{
-      "Anvandarnamn": "admin",
-      "Losenord_Hash": hash_password("admin123"),
-      "Roll": "admin",
-  }])
-  default_df.to_csv(USER_FILE, index=False)
-  return default_df
-
-
-def save_users(df: pd.DataFrame):
-  df.to_csv(USER_FILE, index=False)
-
-
-# ==========================================
-# HELPER FUNCTIONS - DATA MANAGEMENT
-# ==========================================
-def load_data(file_path, columns) -> pd.DataFrame:
-  if os.path.exists(file_path):
-    try:
-      df = pd.read_csv(file_path)
-      for col in columns:
-        if col not in df.columns:
-          df[col] = 0.0 if "Pris" in col or "Totalt" in col else ""
-      return df
-    except Exception:
-      return pd.DataFrame(columns=columns)
-  return pd.DataFrame(columns=columns)
-
-
-def save_data(df: pd.DataFrame, file_path):
-  df.to_csv(file_path, index=False)
-
-
-# ==========================================
-# PAGE CONFIGURATION
-# ==========================================
-st.set_page_config(
-    page_title="Laso Invest AB - System", page_icon="💼", layout="wide"
-)
-
-if "logged_in" not in st.session_state:
-  st.session_state.logged_in = False
-if "username" not in st.session_state:
-  st.session_state.username = ""
-if "user_role" not in st.session_state:
-  st.session_state.user_role = ""
-
-# ==========================================
-# INLOGGNINGSSKÄRM
-# ==========================================
-if not st.session_state.logged_in:
-  st.title("💼 LASO INVEST AB")
-  st.subheader("🔐 Logga in för att komma åt applikationen")
-
-  df_users = load_users()
-
-  col_login, _ = st.columns([1, 1])
-  with col_login:
-    with st.form("login_form"):
-      user_input = st.text_input("Användarnamn")
-      pass_input = st.text_input("Lösenord", type="password")
-      submit_login = st.form_submit_button("Logga in", type="primary")
-
-    if submit_login:
-      hashed_input = hash_password(pass_input)
-      user_match = df_users[
-          (df_users["Anvandarnamn"].str.lower() == user_input.strip().lower())
-          & (df_users["Losenord_Hash"] == hashed_input)
-      ]
-
-      if not user_match.empty:
-        st.session_state.logged_in = True
-        st.session_state.username = user_match.iloc[0]["Anvandarnamn"]
-        st.session_state.user_role = user_match.iloc[0]["Roll"]
-        st.success(f"Välkommen {st.session_state.username}!")
-        st.rerun()
-      else:
-        st.error("Felaktigt användarnamn eller lösenord.")
-
-  st.stop()
-
-# ==========================================
-# INLOGGAD - SIDOMENY
-# ==========================================
-with st.sidebar:
-  st.title("💼 LASO INVEST AB")
-  st.write(f"👤 Inloggad: **{st.session_state.username}**")
-  st.write(f"🎭 Roll: **{st.session_state.user_role.capitalize()}**")
-
-  if st.button("🚪 Logga ut", type="secondary"):
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.session_state.user_role = ""
-    st.rerun()
-
-  st.divider()
-
-# ==========================================
-# FLIKSTRUKTUR BEROENDE PÅ ROLL
-# ==========================================
-tab_names = [
-    "➕ Registrera arbete",
-    "📑 Offerter",
-    "📦 Artikeldatabas",
-    "✏️ Redigera / Ta bort",
-    "📄 Fakturaunderlag",
+    {"Kategori": "Övrigt", "Artikelnr": "25300", "Artikel": "Släp kåpa, tipp", "ArtPris": "60.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25301", "Artikel": "Avvägningsinstrument Laser", "ArtPris": "25.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25302", "Artikel": "Instrument för Ledningskoll", "ArtPris": "25.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25303", "Artikel": "Padda manuell Diesel", "ArtPris": "60.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25400", "Artikel": "Biggab tippvagn Lastväxlare 7-10ton", "ArtPris": "160.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25401", "Artikel": "Lastbil / Lastväxlare Entreprenad", "ArtPris": "1250.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25402", "Artikel": "Etablering", "ArtPris": "900.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25403", "Artikel": "Av-etablering", "ArtPris": "900.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25404", "Artikel": "4-hjuling el, spel", "ArtPris": "150.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25405", "Artikel": "Så, vält", "ArtPris": "30.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25406", "Artikel": "Harv", "ArtPris": "25.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25407", "Artikel": "Mindre tippvagn", "ArtPris": "40.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25500", "Artikel": "Maskinist (Hyra av maskin)", "ArtPris": "460.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25501", "Artikel": "Spadgubbe", "ArtPris": "440.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25502", "Artikel": "Resor Bil (per mil)", "ArtPris": "60.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25503", "Artikel": "Projektledare", "ArtPris": "550.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25504", "Artikel": "Utsättning", "ArtPris": "350.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25505", "Artikel": "Uppritning", "ArtPris": "550.00"},
+    {"Kategori": "Övrigt", "Artikelnr": "25506", "Artikel": "Bil med verktyg", "ArtPris": "300.00"},
 ]
 
-if st.session_state.user_role == "admin":
-  tab_names.append("🔐 Admin & Användare")
+def clean_str(val):
+    if val is None: return ""
+    s = str(val).strip()
+    return "" if s.lower() == "nan" or s == "<NA>" else s
 
-tabs = st.tabs(tab_names)
+def format_pris(val):
+    try:
+        clean_val = str(val).replace("kr", "").replace(" ", "").replace(",", ".").strip()
+        num = int(round(float(clean_val)))
+        return f"{num:,}".replace(",", " ") + " kr"
+    except (ValueError, TypeError):
+        return str(val)
 
-# Load dataframes
-df_arbeid = load_data(DATA_FILE, DATA_COLUMNS)
-df_artiklar = load_data(ARTIKEL_FILE, ARTIKEL_COLUMNS)
-df_offerter = load_data(OFFERT_FILE, OFFERT_COLUMNS)
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            df = pd.read_csv(DATA_FILE, dtype=str).fillna("")
+            for col in DATA_COLUMNS:
+                if col not in df.columns: 
+                    df[col] = df["Datum"] if col == "Skapad_Datum" else ""
+            return df[DATA_COLUMNS]
+        except Exception: return pd.DataFrame(columns=DATA_COLUMNS)
+    return pd.DataFrame(columns=DATA_COLUMNS)
 
-# ------------------------------------------
-# FLIK 0: REGISTRERA ARBETE (MED ARTIKELDATABAS)
-# ------------------------------------------
-with tabs[0]:
-  st.header("➕ Registrera utfört arbete & material")
+def save_data(df): df.to_csv(DATA_FILE, index=False)
 
-  # Förbered artikellista för dropdown
-  artiklar_lista = ["-- Ingen / Manuell --"]
-  if not df_artiklar.empty and "Artikelnamn" in df_artiklar.columns:
-    artiklar_lista += df_artiklar["Artikelnamn"].tolist()
+def default_articles():
+    df = pd.DataFrame(DEFAULT_ARTICLES)
+    df.to_csv(ARTICLE_FILE, index=False)
+    return df
 
-  # Välj artikel utanför formuläret för direkt prisuppdatering
-  valdal_artikel = st.selectbox("Välj artikel från databasen (fyller i pris automatiskt)", artiklar_lista)
-  
-  default_pris = 500.0
-  if valdal_artikel != "-- Ingen / Manuell --":
-    art_row = df_artiklar[df_artiklar["Artikelnamn"] == valdal_artikel]
-    if not art_row.empty:
-      default_pris = float(art_row.iloc[0]["A_Pris_Exkl_Moms"])
+def load_articles():
+    if os.path.exists(ARTICLE_FILE):
+        try:
+            df = pd.read_csv(ARTICLE_FILE, dtype=str).fillna("")
+            for col in ARTICLE_COLUMNS:
+                if col not in df.columns: df[col] = ""
+            if df.empty: return default_articles()
+            return df[ARTICLE_COLUMNS]
+        except Exception: return default_articles()
+    return default_articles()
 
-  with st.form("registrerings_form", clear_on_submit=True):
-    col1, col2 = st.columns(2)
+def save_articles(df): df.to_csv(ARTICLE_FILE, index=False)
 
-    with col1:
-      valth_datum = st.date_input("Datum", date.today())
-      kund_namn = st.text_input("Kundnamn / Företag")
-      kund_adress = st.text_input("Gatuadress")
-      
-      col_p1, col_p2 = st.columns(2)
-      with col_p1:
-        kund_postnr = st.text_input("Postnummer")
-      with col_p2:
-        kund_ort = st.text_input("Ort")
-        
-      kategori = st.selectbox("Kategori", KATEGORIER)
-      arbets_beskrivning = st.text_area("Arbetsbeskrivning")
+def load_offerter():
+    if os.path.exists(OFFERT_FILE):
+        try:
+            df = pd.read_csv(OFFERT_FILE, dtype=str).fillna("")
+            for col in OFFERT_COLUMNS:
+                if col not in df.columns: df[col] = ""
+            return df[OFFERT_COLUMNS]
+        except Exception: return pd.DataFrame(columns=OFFERT_COLUMNS)
+    return pd.DataFrame(columns=OFFERT_COLUMNS)
 
-    with col2:
-      timmar = st.number_input("Antal timmar", min_value=0.0, step=0.5)
-      timpris = st.number_input("Timpris / A-Pris (exkl. moms)", min_value=0.0, value=default_pris, step=50.0)
-      material_kostnad = st.number_input("Materialkostnad (exkl. moms)", min_value=0.0, step=100.0)
-      ovrigt_kostnad = st.number_input("Övriga kostnader (exkl. moms)", min_value=0.0, step=50.0)
+def save_offerter(df): df.to_csv(OFFERT_FILE, index=False)
 
-    submitted = st.form_submit_button("Spara registrering", type="primary")
+# --- PDF FUNKTIONER ---
+def generate_pdf_file(customer_name, records, filepath):
+    if records is None or len(records) == 0: return False
+    doc = SimpleDocTemplate(filepath, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+    story = []
+    styles = getSampleStyleSheet()
 
-    if submitted:
-      totalt_exkl = (timmar * timpris) + material_kostnad + ovrigt_kostnad
-      moms = totalt_exkl * 0.25
-      totalt_inkl = totalt_exkl + moms
+    title_style = ParagraphStyle("DocTitle", parent=styles["Heading1"], fontSize=18, textColor=colors.HexColor("#1A365D"))
+    meta_style = ParagraphStyle("MetaText", parent=styles["Normal"], fontSize=9, leading=12)
+    meta_bold = ParagraphStyle("MetaTextBold", parent=styles["Normal"], fontSize=9, leading=12, fontName="Helvetica-Bold")
 
-      ny_rad = pd.DataFrame([{
-          "Datum": str(valth_datum),
-          "Kund": kund_namn,
-          "Adress": kund_adress,
-          "Postnummer": kund_postnr,
-          "Ort": kund_ort,
-          "Kategori": kategori,
-          "Artikel": valdal_artikel if valdal_artikel != "-- Ingen / Manuell --" else "",
-          "Arbetsbeskrivning": arbets_beskrivning,
-          "Timmar": timmar,
-          "Timpris": timpris,
-          "Materialkostnad": material_kostnad,
-          "Ovrigt": ovrigt_kostnad,
-          "Totalt_Exkl_Moms": totalt_exkl,
-          "Moms_25": moms,
-          "Totalt_Inkl_Moms": totalt_inkl
-      }])
+    first_rec = records.iloc[0]
+    header_data = [[
+        Paragraph("<b>LASO INVEST AB</b><br/>Fakturaunderlag", title_style),
+        Paragraph(f"<b>Datum:</b> {date.today().strftime('%Y-%m-%d')}<br/><b>Org.nr/Pers.nr:</b> {clean_str(first_rec.get('Kund_OrgNr', ''))}", meta_style)
+    ]]
+    header_table = Table(header_data, colWidths=[11*cm, 7*cm])
+    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (1,0), (1,0), 'RIGHT')]))
+    story.append(header_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#1A365D"), spaceBefore=8, spaceAfter=12))
 
-      df_arbeid = pd.concat([df_arbeid, ny_rad], ignore_index=True)
-      save_data(df_arbeid, DATA_FILE)
-      st.success("Registreringen har sparats!")
-      st.rerun()
+    k_namn, k_adr = clean_str(first_rec.get('Kund_Namn', '')), clean_str(first_rec.get('Kund_Adress', ''))
+    k_post, k_ort = clean_str(first_rec.get('Kund_Postnr', '')), clean_str(first_rec.get('Kund_Ort', ''))
+    f_namn = clean_str(first_rec.get('Faktura_Namn', '')) or k_namn
+    f_adr = clean_str(first_rec.get('Faktura_Adress', '')) or k_adr
+    f_post = clean_str(first_rec.get('Faktura_Postnr', '')) or k_post
+    f_ort = clean_str(first_rec.get('Faktura_Ort', '')) or k_ort
+
+    kund_info = f"<b>KUND:</b><br/>{k_namn}"
+    if k_adr: kund_info += f"<br/>{k_adr}"
+    if k_post or k_ort: kund_info += f"<br/>{k_post} {k_ort}".strip()
+
+    faktura_info = f"<b>FAKTURAADRESS:</b><br/>{f_namn}"
+    if f_adr: faktura_info += f"<br/>{f_adr}"
+    if f_post or f_ort: faktura_info += f"<br/>{f_post} {f_ort}".strip()
+
+    address_table = Table([[Paragraph(kund_info, meta_style), Paragraph(faktura_info, meta_style)]], colWidths=[9*cm, 9*cm])
+    address_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(address_table)
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=8, spaceAfter=12))
+
+    table_data = [[
+        Paragraph("<b>Datum</b>", meta_bold),
+        Paragraph("<b>Artikel / Åtgärd / Beskrivning</b>", meta_bold),
+        Paragraph("<b>Antal/Timmar</b>", meta_bold),
+        Paragraph("<b>A-pris</b>", meta_bold),
+        Paragraph("<b>Belopp (SEK)</b>", meta_bold)
+    ]]
+
+    totalt_belopp, totalt_timmar = 0.0, 0
+    for _, row in records.sort_values(by="Datum").iterrows():
+        try: 
+            t_tim = int(float(row["Timmar"]))
+            t_pris = float(row["Timpris"])
+            t_tot = t_tim * t_pris
+        except ValueError: 
+            t_tim, t_pris, t_tot = 0, 0.0, 0.0
+            
+        totalt_belopp += t_tot
+        totalt_timmar += t_tim
+
+        art_nr = clean_str(row['Artikelnr'])
+        art_nr_str = f"[{art_nr}] " if art_nr else ""
+        desc_str = clean_str(row['Beskrivning'])
+        desc = f"<br/><i>{desc_str}</i>" if desc_str else ""
+        beskrivning_text = f"<b>{art_nr_str}{clean_str(row['Artikel'])}</b>{desc}"
+
+        table_data.append([
+            Paragraph(str(row["Datum"]), meta_style),
+            Paragraph(beskrivning_text, meta_style),
+            Paragraph(f"{t_tim}", meta_style),
+            Paragraph(f"{t_pris:.2f} kr", meta_style),
+            Paragraph(f"{t_tot:.2f} kr", meta_style)
+        ])
+
+    table_data.append([
+        Paragraph("<b>Totalt:</b>", meta_bold), Paragraph("", meta_style),
+        Paragraph(f"<b>{totalt_timmar} st/h</b>", meta_bold), Paragraph("", meta_style),
+        Paragraph(f"<b>{totalt_belopp:.2f} kr</b>", meta_bold)
+    ])
+
+    t = Table(table_data, colWidths=[2.5*cm, 8.5*cm, 2.2*cm, 2.3*cm, 2.5*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#F1F5F9")),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5), ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#E2E8F0")),
+    ]))
+
+    story.append(t)
+    doc.build(story)
+    return True
+
+def generate_offert_pdf(offertnr, records, filepath):
+    if records is None or len(records) == 0: return False
+    doc = SimpleDocTemplate(filepath, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+    story = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle("OffertTitle", parent=styles["Heading1"], fontSize=22, textColor=colors.HexColor("#2B6CB0"))
+    meta_style = ParagraphStyle("MetaText", parent=styles["Normal"], fontSize=9, leading=13)
+    meta_bold = ParagraphStyle("MetaTextBold", parent=styles["Normal"], fontSize=9, leading=13, fontName="Helvetica-Bold")
+
+    first_rec = records.iloc[0]
+    
+    header_data = [[
+        Paragraph("<b>LASO INVEST AB</b><br/><font size=14 color='#2B6CB0'><b>OFFERT</b></font>", title_style),
+        Paragraph(f"<b>Offertnummer:</b> {offertnr}<br/><b>Datum:</b> {first_rec['Offertdatum']}<br/><b>Giltig t.o.m:</b> {first_rec['Giltig_Tom']}", meta_style)
+    ]]
+    header_table = Table(header_data, colWidths=[10*cm, 8*cm])
+    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (1,0), (1,0), 'RIGHT')]))
+    story.append(header_table)
+    story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#2B6CB0"), spaceBefore=8, spaceAfter=12))
+
+    k_namn, k_adr = clean_str(first_rec.get('Kund_Namn', '')), clean_str(first_rec.get('Kund_Adress', ''))
+    k_post, k_ort = clean_str(first_rec.get('Kund_Postnr', '')), clean_str(first_rec.get('Kund_Ort', ''))
+    k_org = clean_str(first_rec.get('Kund_OrgNr', ''))
+
+    kund_info = f"<b>OFFERT TILL:</b><br/><b>{k_namn}</b>"
+    if k_org: kund_info += f"<br/>Org.nr/Pers.nr: {k_org}"
+    if k_adr: kund_info += f"<br/>{k_adr}"
+    if k_post or k_ort: kund_info += f"<br/>{k_post} {k_ort}".strip()
+
+    address_table = Table([[Paragraph(kund_info, meta_style)]], colWidths=[18*cm])
+    address_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(address_table)
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=8, spaceAfter=12))
+
+    table_data = [[
+        Paragraph("<b>Pos</b>", meta_bold),
+        Paragraph("<b>Artikel / Beskrivning</b>", meta_bold),
+        Paragraph("<b>Antal/Timmar</b>", meta_bold),
+        Paragraph("<b>A-pris</b>", meta_bold),
+        Paragraph("<b>Totalt (exkl. moms)</b>", meta_bold)
+    ]]
+
+    totalt_exkl = 0.0
+    for idx, (_, row) in enumerate(records.iterrows(), 1):
+        try:
+            antal = int(float(row["Antal"]))
+            apris = float(row["A_Pris"])
+            tot = antal * apris
+        except ValueError:
+            antal, apris, tot = 0, 0.0, 0.0
+            
+        totalt_exkl += tot
+
+        art_nr = clean_str(row['Artikelnr'])
+        art_nr_str = f"[{art_nr}] " if art_nr else ""
+        desc_str = clean_str(row['Beskrivning'])
+        desc = f"<br/><i>{desc_str}</i>" if desc_str else ""
+        beskrivning_text = f"<b>{art_nr_str}{clean_str(row['Artikel'])}</b>{desc}"
+
+        table_data.append([
+            Paragraph(str(idx), meta_style),
+            Paragraph(beskrivning_text, meta_style),
+            Paragraph(f"{antal}", meta_style),
+            Paragraph(f"{apris:.2f} kr", meta_style),
+            Paragraph(f"{tot:.2f} kr", meta_style)
+        ])
+
+    moms = totalt_exkl * 0.25
+    totalt_inkl = totalt_exkl + moms
+
+    t = Table(table_data, colWidths=[1.5*cm, 9.5*cm, 2.2*cm, 2.3*cm, 2.5*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EBF8FF")),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5), ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
+    ]))
+
+    story.append(t)
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=10, spaceAfter=10))
+
+    sum_data = [
+        [Paragraph("Netto exkl. moms:", meta_style), Paragraph(f"{totalt_exkl:.2f} kr", meta_style)],
+        [Paragraph("Moms (25%):", meta_style), Paragraph(f"{moms:.2f} kr", meta_style)],
+        [Paragraph("<b>Totalt att betala:</b>", meta_bold), Paragraph(f"<b>{totalt_inkl:.2f} kr</b>", meta_bold)]
+    ]
+    sum_table = Table(sum_data, colWidths=[13*cm, 5*cm])
+    sum_table.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+    ]))
+    story.append(sum_table)
+
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=15, spaceAfter=10))
+    villkor_text = f"<b>Betalningsvillkor:</b> 30 dagar netto efter slutfört arbete / fakturering.<br/>Offerten är giltig t.o.m. <b>{first_rec['Giltig_Tom']}</b>."
+    story.append(Paragraph(villkor_text, meta_style))
+
+    doc.build(story)
+    return True
+
+# --- SESSION STATE INITIALISERING ---
+if "temp_items" not in st.session_state:
+    st.session_state.temp_items = []
+
+if "temp_offert_items" not in st.session_state:
+    st.session_state.temp_offert_items = []
+
+if "form_counter" not in st.session_state:
+    st.session_state.form_counter = 0
+
+if "offert_form_counter" not in st.session_state:
+    st.session_state.offert_form_counter = 0
+
+df_data = load_data()
+df_art = load_articles()
+df_offert = load_offerter()
+
+st.title("💼 Laso Invest AB – Tid, Fakturering & Offert")
+
+tabs = st.tabs(["➕ Registrera arbete", "📑 Offerter", "📦 Artikeldatabas", "✏️ Redigera / Ta bort", "📄 Fakturaunderlag"])
 
 # ==========================================
 # FLIK 1: REGISTRERA ARBETE
@@ -535,23 +638,8 @@ with tabs[1]:
         if df_offert_curr.empty:
             st.info("Inga offerter har skapats ännu.")
         else:
-            # Gruppera per offertnummer
-            grouped_off = list(df_offert_curr.groupby("Offertnr", sort=False))
-            
-            # Hjälpfunktion för att sortera fallande baserat på det numeriska värdet i "OFF-XXXX"
-            def get_offert_num(item):
-                off_nr = item[0]
-                num_part = str(off_nr).replace("OFF-", "")
-                try:
-                    return int(num_part)
-                except ValueError:
-                    return 0
-
-            # Sortera fallande så högsta offertnamnet (senaste) hamnar först
-            grouped_off_sorted = sorted(grouped_off, key=get_offert_num, reverse=True)
-
             off_options_map = {}
-            for off_nr, group in grouped_off_sorted:
+            for off_nr, group in df_offert_curr.groupby("Offertnr", sort=False):
                 kunder = group["Kund_Namn"].unique()
                 k_str = ", ".join([k for k in kunder if k.strip()]) or "Okänd kund"
                 label = f"{off_nr} – {k_str}"
@@ -809,63 +897,3 @@ with tabs[4]:
                         st.success(f"E-post skickades framgångsrikt till {epost_mottagare}!")
                     except Exception as e:
                         st.error(f"Kunde inte skicka e-post: {e}")
-# ------------------------------------------
-# FLIK 6: ADMIN & ANVÄNDARHANTERING (ENDAST ADMIN)
-# ------------------------------------------
-if st.session_state.user_role == "admin":
-  with tabs[5]:
-    st.header("🔐 Admin - Hantera Användare & Lösenord")
-    df_users = load_users()
-
-    col_adm1, col_adm2 = st.columns(2)
-
-    with col_adm1:
-      st.subheader("🔑 Återställ Lösenord")
-      all_users = df_users["Anvandarnamn"].tolist()
-      selected_user = st.selectbox("Välj användare:", options=all_users)
-      new_pass = st.text_input("Nytt lösenord", type="password", key="admin_reset_pass")
-
-      if st.button("Spara nytt lösenord", type="primary"):
-        if new_pass.strip():
-          df_users.loc[df_users["Anvandarnamn"] == selected_user, "Losenord_Hash"] = hash_password(new_pass.strip())
-          save_users(df_users)
-          st.success(f"Lösenordet för '{selected_user}' har uppdaterats!")
-        else:
-          st.warning("Ange ett giltigt lösenord.")
-
-    with col_adm2:
-      st.subheader("➕ Skapa ny användare")
-      new_username = st.text_input("Användarnamn", key="admin_new_user")
-      new_user_pass = st.text_input("Lösenord", type="password", key="admin_new_pass")
-      new_role = st.selectbox("Roll", options=["anvandare", "admin"])
-
-      if st.button("Skapa användare"):
-        if new_username.strip() and new_user_pass.strip():
-          if not df_users[df_users["Anvandarnamn"].str.lower() == new_username.strip().lower()].empty:
-            st.error("Användarnamnet finns redan!")
-          else:
-            ny_anvandare = pd.DataFrame([{
-                "Anvandarnamn": new_username.strip(),
-                "Losenord_Hash": hash_password(new_user_pass.strip()),
-                "Roll": new_role,
-            }])
-            df_users = pd.concat([df_users, ny_anvandare], ignore_index=True)
-            save_users(df_users)
-            st.success(f"Användaren '{new_username}' har skapats!")
-            st.rerun()
-        else:
-          st.warning("Fyll i både användarnamn och lösenord.")
-
-    st.divider()
-
-    st.subheader("📋 Registrerade Användare")
-    st.dataframe(df_users[["Anvandarnamn", "Roll"]], use_container_width=True)
-
-    other_users = [u for u in all_users if u != st.session_state.username]
-    if other_users:
-      user_to_delete = st.selectbox("Välj användare att ta bort:", options=other_users)
-      if st.button("❌ Ta bort användare"):
-        df_users = df_users[df_users["Anvandarnamn"] != user_to_delete].reset_index(drop=True)
-        save_users(df_users)
-        st.success(f"Användaren '{user_to_delete}' har tagits bort.")
-        st.rerun()
