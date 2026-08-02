@@ -14,6 +14,11 @@ USER_FILE = "laso_invest_anvandare.csv"
 
 DATA_COLUMNS = [
     "Datum",
+    "Kund",
+    "Adress",
+    "Postnummer",
+    "Ort",
+    "Kategori",
     "Arbetsbeskrivning",
     "Timmar",
     "Timpris",
@@ -22,7 +27,6 @@ DATA_COLUMNS = [
     "Totalt_Exkl_Moms",
     "Moms_25",
     "Totalt_Inkl_Moms",
-    "Kund",
 ]
 
 ARTIKEL_COLUMNS = ["Artikelnummer", "Artikelnamn", "Enhet", "A_Pris_Exkl_Moms"]
@@ -31,6 +35,10 @@ OFFERT_COLUMNS = [
     "Offertnummer",
     "Datum",
     "Kund",
+    "Adress",
+    "Postnummer",
+    "Ort",
+    "Kategori",
     "Beskrivning",
     "Totalt_Exkl_Moms",
     "Moms_25",
@@ -50,7 +58,6 @@ def hash_password(password: str) -> str:
 
 
 def load_users() -> pd.DataFrame:
-  """Loads users from CSV. Creates default admin if file missing."""
   if os.path.exists(USER_FILE):
     try:
       df = pd.read_csv(USER_FILE, dtype=str).fillna("")
@@ -102,7 +109,7 @@ st.set_page_config(
     page_title="Laso Invest AB - System", page_icon="💼", layout="wide"
 )
 
-# Initialize Session State for Login
+# Session State for Login
 if "logged_in" not in st.session_state:
   st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -142,7 +149,7 @@ if not st.session_state.logged_in:
       else:
         st.error("Felaktigt användarnamn eller lösenord.")
 
-  st.stop()  # Stoppar vidare exekvering tills man är inloggad
+  st.stop()
 
 # ==========================================
 # INLOGGAD - SIDOMENY
@@ -171,19 +178,18 @@ tab_names = [
     "📄 Fakturaunderlag",
 ]
 
-# Lägg till Admin-flik om användaren har admin-roll
 if st.session_state.user_role == "admin":
   tab_names.append("🔐 Admin & Användare")
 
 tabs = st.tabs(tab_names)
 
-# Load shared dataframes
+# Load dataframes
 df_arbeid = load_data(DATA_FILE, DATA_COLUMNS)
 df_artiklar = load_data(ARTIKEL_FILE, ARTIKEL_COLUMNS)
 df_offerter = load_data(OFFERT_FILE, OFFERT_COLUMNS)
 
 # ------------------------------------------
-# FLIK 0: REGISTRERA ARBETE
+# FLIK 0: REGISTRERA ARBETE (ALLA FÄLT ÅTERSTÄLLDA)
 # ------------------------------------------
 with tabs[0]:
   st.header("➕ Registrera utfört arbete & material")
@@ -193,20 +199,23 @@ with tabs[0]:
 
     with col1:
       valth_datum = st.date_input("Datum", date.today())
-      kund_namn = st.text_input("Kundnamn / Projekt")
+      kund_namn = st.text_input("Kundnamn / Företag")
+      kund_adress = st.text_input("Gatuadress")
+      
+      col_p1, col_p2 = st.columns(2)
+      with col_p1:
+        kund_postnr = st.text_input("Postnummer")
+      with col_p2:
+        kund_ort = st.text_input("Ort")
+        
+      kategori = st.selectbox("Kategori", ["Gemensam", "Bygg", "Maskin", "Fastighet", "Övrigt"])
       arbets_beskrivning = st.text_area("Arbetsbeskrivning")
 
     with col2:
       timmar = st.number_input("Antal timmar", min_value=0.0, step=0.5)
-      timpris = st.number_input(
-          "Timpris (exkl. moms)", min_value=0.0, value=500.0, step=50.0
-      )
-      material_kostnad = st.number_input(
-          "Materialkostnad (exkl. moms)", min_value=0.0, step=100.0
-      )
-      ovrigt_kostnad = st.number_input(
-          "Övriga kostnader (exkl. moms)", min_value=0.0, step=50.0
-      )
+      timpris = st.number_input("Timpris (exkl. moms)", min_value=0.0, value=500.0, step=50.0)
+      material_kostnad = st.number_input("Materialkostnad (exkl. moms)", min_value=0.0, step=100.0)
+      ovrigt_kostnad = st.number_input("Övriga kostnader (exkl. moms)", min_value=0.0, step=50.0)
 
     submitted = st.form_submit_button("Spara registrering", type="primary")
 
@@ -217,6 +226,11 @@ with tabs[0]:
 
       ny_rad = pd.DataFrame([{
           "Datum": str(valth_datum),
+          "Kund": kund_namn,
+          "Adress": kund_adress,
+          "Postnummer": kund_postnr,
+          "Ort": kund_ort,
+          "Kategori": kategori,
           "Arbetsbeskrivning": arbets_beskrivning,
           "Timmar": timmar,
           "Timpris": timpris,
@@ -224,8 +238,7 @@ with tabs[0]:
           "Ovrigt": ovrigt_kostnad,
           "Totalt_Exkl_Moms": totalt_exkl,
           "Moms_25": moms,
-          "Totalt_Inkl_Moms": totalt_inkl,
-          "Kund": kund_namn,
+          "Totalt_Inkl_Moms": totalt_inkl
       }])
 
       df_arbeid = pd.concat([df_arbeid, ny_rad], ignore_index=True)
@@ -234,7 +247,7 @@ with tabs[0]:
       st.rerun()
 
 # ------------------------------------------
-# FLIK 1: OFFERTER
+# FLIK 1: OFFERTER (ALLA FÄLT ÅTERSTÄLLDA)
 # ------------------------------------------
 with tabs[1]:
   st.header("📑 Offertförfrågningar & Skapa offerter")
@@ -243,16 +256,22 @@ with tabs[1]:
     col_o1, col_o2 = st.columns(2)
     with col_o1:
       offert_kund = st.text_input("Kund / Företag")
+      offert_adress = st.text_input("Gatuadress")
+      
+      col_op1, col_op2 = st.columns(2)
+      with col_op1:
+        offert_postnr = st.text_input("Postnummer")
+      with col_op2:
+        offert_ort = st.text_input("Ort")
+        
+      offert_kategori = st.selectbox("Kategori", ["Gemensam", "Bygg", "Maskin", "Fastighet", "Övrigt"], key="offert_kat")
       offert_beskrivning = st.text_area("Offertbeskrivning / Omfattning")
-    with col_o2:
-      offert_summa_exkl = st.number_input(
-          "Beräknat belopp (exkl. moms)", min_value=0.0, step=500.0
-      )
-      offert_status = st.selectbox(
-          "Status", ["Skapad", "Skickad", "Accepterad", "Avslagen"]
-      )
 
-    submit_offert = st.form_submit_button("Skapa offert")
+    with col_o2:
+      offert_summa_exkl = st.number_input("Beräknat belopp (exkl. moms)", min_value=0.0, step=500.0)
+      offert_status = st.selectbox("Status", ["Skapad", "Skickad", "Accepterad", "Avslagen"])
+
+    submit_offert = st.form_submit_button("Skapa offert", type="primary")
 
     if submit_offert:
       offert_nr = f"OFF-{len(df_offerter) + 1001}"
@@ -263,6 +282,10 @@ with tabs[1]:
           "Offertnummer": offert_nr,
           "Datum": str(date.today()),
           "Kund": offert_kund,
+          "Adress": offert_adress,
+          "Postnummer": offert_postnr,
+          "Ort": offert_ort,
+          "Kategori": offert_kategori,
           "Beskrivning": offert_beskrivning,
           "Totalt_Exkl_Moms": offert_summa_exkl,
           "Moms_25": moms,
@@ -341,7 +364,7 @@ with tabs[4]:
   st.header("📄 Skapa fakturaunderlag")
 
   if not df_arbeid.empty:
-    kunder = list(df_arbeid["Kund"].unique())
+    kunder = list(df_arbeid["Kund"].dropna().unique())
     valdh_kund = st.selectbox("Välj kund för sammanställning", kunder)
 
     kund_df = df_arbeid[df_arbeid["Kund"] == valdh_kund]
@@ -349,14 +372,12 @@ with tabs[4]:
     st.subheader(f"Underlag för: {valdh_kund}")
     st.dataframe(kund_df, use_container_width=True)
 
-    # Omvandla säkert till float ifall värdena lästs in som strängar
+    # Säker konvertering till float för att undvika f-string fel
     tot_exkl = float(pd.to_numeric(kund_df["Totalt_Exkl_Moms"], errors="coerce").sum())
     tot_moms = float(pd.to_numeric(kund_df["Moms_25"], errors="coerce").sum())
     tot_inkl = float(pd.to_numeric(kund_df["Totalt_Inkl_Moms"], errors="coerce").sum())
 
     m_col1, m_col2, m_col3 = st.columns(3)
-    
-    # Formatera med standard .2f för att undvika syntaxfel
     m_col1.metric("Totalt exkl. moms", f"{tot_exkl:.2f} kr")
     m_col2.metric("Moms (25%)", f"{tot_moms:.2f} kr")
     m_col3.metric("Totalt inkl. moms", f"{tot_inkl:.2f} kr")
@@ -373,44 +394,29 @@ if st.session_state.user_role == "admin":
 
     col_adm1, col_adm2 = st.columns(2)
 
-    # 1. Återställ lösenord
     with col_adm1:
       st.subheader("🔑 Återställ Lösenord")
       all_users = df_users["Anvandarnamn"].tolist()
       selected_user = st.selectbox("Välj användare:", options=all_users)
-      new_pass = st.text_input(
-          "Nytt lösenord", type="password", key="admin_reset_pass"
-      )
+      new_pass = st.text_input("Nytt lösenord", type="password", key="admin_reset_pass")
 
       if st.button("Spara nytt lösenord", type="primary"):
         if new_pass.strip():
-          df_users.loc[
-              df_users["Anvandarnamn"] == selected_user, "Losenord_Hash"
-          ] = hash_password(new_pass.strip())
+          df_users.loc[df_users["Anvandarnamn"] == selected_user, "Losenord_Hash"] = hash_password(new_pass.strip())
           save_users(df_users)
           st.success(f"Lösenordet för '{selected_user}' har uppdaterats!")
         else:
           st.warning("Ange ett giltigt lösenord.")
 
-    # 2. Skapa ny användare
     with col_adm2:
       st.subheader("➕ Skapa ny användare")
       new_username = st.text_input("Användarnamn", key="admin_new_user")
-      new_user_pass = st.text_input(
-          "Lösenord", type="password", key="admin_new_pass"
-      )
-      new_role = st.selectbox(
-          "Roll",
-          options=["anvandare", "admin"],
-          help="Vanliga användare ser inte denna Admin-flik.",
-      )
+      new_user_pass = st.text_input("Lösenord", type="password", key="admin_new_pass")
+      new_role = st.selectbox("Roll", options=["anvandare", "admin"])
 
       if st.button("Skapa användare"):
         if new_username.strip() and new_user_pass.strip():
-          if not df_users[
-              df_users["Anvandarnamn"].str.lower()
-              == new_username.strip().lower()
-          ].empty:
+          if not df_users[df_users["Anvandarnamn"].str.lower() == new_username.strip().lower()].empty:
             st.error("Användarnamnet finns redan!")
           else:
             ny_anvandare = pd.DataFrame([{
@@ -427,20 +433,14 @@ if st.session_state.user_role == "admin":
 
     st.divider()
 
-    # 3. Lista alla användare och radera
     st.subheader("📋 Registrerade Användare")
-    st.dataframe(
-        df_users[["Anvandarnamn", "Roll"]], use_container_width=True
-    )
+    st.dataframe(df_users[["Anvandarnamn", "Roll"]], use_container_width=True)
 
-    user_to_delete = st.selectbox(
-        "Välj användare att ta bort:",
-        options=[u for u in all_users if u != st.session_state.username],
-    )
-    if st.button("❌ Ta bort användare"):
-      df_users = df_users[
-          df_users["Anvandarnamn"] != user_to_delete
-      ].reset_index(drop=True)
-      save_users(df_users)
-      st.success(f"Användaren '{user_to_delete}' har tagits bort.")
-      st.rerun()
+    other_users = [u for u in all_users if u != st.session_state.username]
+    if other_users:
+      user_to_delete = st.selectbox("Välj användare att ta bort:", options=other_users)
+      if st.button("❌ Ta bort användare"):
+        df_users = df_users[df_users["Anvandarnamn"] != user_to_delete].reset_index(drop=True)
+        save_users(df_users)
+        st.success(f"Användaren '{user_to_delete}' har tagits bort.")
+        st.rerun()
