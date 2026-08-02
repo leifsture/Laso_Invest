@@ -19,6 +19,7 @@ DATA_COLUMNS = [
     "Postnummer",
     "Ort",
     "Kategori",
+    "Artikel",
     "Arbetsbeskrivning",
     "Timmar",
     "Timpris",
@@ -48,12 +49,13 @@ OFFERT_COLUMNS = [
 
 USER_COLUMNS = ["Anvandarnamn", "Losenord_Hash", "Roll"]
 
+KATEGORIER = ["Grävmaskin", "Traktor", "Övrigt"]
+
 
 # ==========================================
 # HELPER FUNCTIONS - SECURITY & USERS
 # ==========================================
 def hash_password(password: str) -> str:
-  """Hashes the password using SHA-256."""
   return hashlib.sha256(password.encode()).hexdigest()
 
 
@@ -68,7 +70,6 @@ def load_users() -> pd.DataFrame:
     except Exception:
       pass
 
-  # Default admin account on first run
   default_df = pd.DataFrame([{
       "Anvandarnamn": "admin",
       "Losenord_Hash": hash_password("admin123"),
@@ -109,7 +110,6 @@ st.set_page_config(
     page_title="Laso Invest AB - System", page_icon="💼", layout="wide"
 )
 
-# Session State for Login
 if "logged_in" not in st.session_state:
   st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -189,10 +189,24 @@ df_artiklar = load_data(ARTIKEL_FILE, ARTIKEL_COLUMNS)
 df_offerter = load_data(OFFERT_FILE, OFFERT_COLUMNS)
 
 # ------------------------------------------
-# FLIK 0: REGISTRERA ARBETE (ALLA FÄLT ÅTERSTÄLLDA)
+# FLIK 0: REGISTRERA ARBETE (MED ARTIKELDATABAS)
 # ------------------------------------------
 with tabs[0]:
   st.header("➕ Registrera utfört arbete & material")
+
+  # Förbered artikellista för dropdown
+  artiklar_lista = ["-- Ingen / Manuell --"]
+  if not df_artiklar.empty and "Artikelnamn" in df_artiklar.columns:
+    artiklar_lista += df_artiklar["Artikelnamn"].tolist()
+
+  # Välj artikel utanför formuläret för direkt prisuppdatering
+  valdal_artikel = st.selectbox("Välj artikel från databasen (fyller i pris automatiskt)", artiklar_lista)
+  
+  default_pris = 500.0
+  if valdal_artikel != "-- Ingen / Manuell --":
+    art_row = df_artiklar[df_artiklar["Artikelnamn"] == valdal_artikel]
+    if not art_row.empty:
+      default_pris = float(art_row.iloc[0]["A_Pris_Exkl_Moms"])
 
   with st.form("registrerings_form", clear_on_submit=True):
     col1, col2 = st.columns(2)
@@ -208,12 +222,12 @@ with tabs[0]:
       with col_p2:
         kund_ort = st.text_input("Ort")
         
-      kategori = st.selectbox("Kategori", ["Gemensam", "Bygg", "Maskin", "Fastighet", "Övrigt"])
+      kategori = st.selectbox("Kategori", KATEGORIER)
       arbets_beskrivning = st.text_area("Arbetsbeskrivning")
 
     with col2:
       timmar = st.number_input("Antal timmar", min_value=0.0, step=0.5)
-      timpris = st.number_input("Timpris (exkl. moms)", min_value=0.0, value=500.0, step=50.0)
+      timpris = st.number_input("Timpris / A-Pris (exkl. moms)", min_value=0.0, value=default_pris, step=50.0)
       material_kostnad = st.number_input("Materialkostnad (exkl. moms)", min_value=0.0, step=100.0)
       ovrigt_kostnad = st.number_input("Övriga kostnader (exkl. moms)", min_value=0.0, step=50.0)
 
@@ -231,6 +245,7 @@ with tabs[0]:
           "Postnummer": kund_postnr,
           "Ort": kund_ort,
           "Kategori": kategori,
+          "Artikel": valdal_artikel if valdal_artikel != "-- Ingen / Manuell --" else "",
           "Arbetsbeskrivning": arbets_beskrivning,
           "Timmar": timmar,
           "Timpris": timpris,
@@ -247,7 +262,7 @@ with tabs[0]:
       st.rerun()
 
 # ------------------------------------------
-# FLIK 1: OFFERTER (ALLA FÄLT ÅTERSTÄLLDA)
+# FLIK 1: OFFERTER
 # ------------------------------------------
 with tabs[1]:
   st.header("📑 Offertförfrågningar & Skapa offerter")
@@ -264,7 +279,7 @@ with tabs[1]:
       with col_op2:
         offert_ort = st.text_input("Ort")
         
-      offert_kategori = st.selectbox("Kategori", ["Gemensam", "Bygg", "Maskin", "Fastighet", "Övrigt"], key="offert_kat")
+      offert_kategori = st.selectbox("Kategori", KATEGORIER, key="offert_kat")
       offert_beskrivning = st.text_area("Offertbeskrivning / Omfattning")
 
     with col_o2:
@@ -311,12 +326,12 @@ with tabs[2]:
     col_art1, col_art2 = st.columns(2)
     with col_art1:
       art_nr = st.text_input("Artikelnummer")
-      art_namn = st.text_input("Artikelnamn")
+      art_namn = st.text_input("Artikelnamn / Tjänst (ex. Grävmaskin 15t)")
     with col_art2:
-      art_enhet = st.selectbox("Enhet", ["st", "timmar", "m", "m2", "kg", "l"])
-      art_pris = st.number_input("A-pris exkl. moms", min_value=0.0, step=10.0)
+      art_enhet = st.selectbox("Enhet", ["timmar", "st", "m", "m2", "kg", "l"])
+      art_pris = st.number_input("A-pris / Timpris exkl. moms", min_value=0.0, step=50.0)
 
-    submit_art = st.form_submit_button("Spara artikel")
+    submit_art = st.form_submit_button("Spara artikel", type="primary")
 
     if submit_art:
       ny_art = pd.DataFrame([{
@@ -328,7 +343,7 @@ with tabs[2]:
 
       df_artiklar = pd.concat([df_artiklar, ny_art], ignore_index=True)
       save_data(df_artiklar, ARTIKEL_FILE)
-      st.success("Artikeln har lagts till!")
+      st.success("Artikeln har sparats!")
       st.rerun()
 
   st.subheader("📋 Artikellista")
@@ -372,7 +387,6 @@ with tabs[4]:
     st.subheader(f"Underlag för: {valdh_kund}")
     st.dataframe(kund_df, use_container_width=True)
 
-    # Säker konvertering till float för att undvika f-string fel
     tot_exkl = float(pd.to_numeric(kund_df["Totalt_Exkl_Moms"], errors="coerce").sum())
     tot_moms = float(pd.to_numeric(kund_df["Moms_25"], errors="coerce").sum())
     tot_inkl = float(pd.to_numeric(kund_df["Totalt_Inkl_Moms"], errors="coerce").sum())
