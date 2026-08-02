@@ -638,8 +638,23 @@ with tabs[1]:
         if df_offert_curr.empty:
             st.info("Inga offerter har skapats ännu.")
         else:
+            # Gruppera per offertnummer
+            grouped_off = list(df_offert_curr.groupby("Offertnr", sort=False))
+            
+            # Hjälpfunktion för att sortera fallande baserat på det numeriska värdet i "OFF-XXXX"
+            def get_offert_num(item):
+                off_nr = item[0]
+                num_part = str(off_nr).replace("OFF-", "")
+                try:
+                    return int(num_part)
+                except ValueError:
+                    return 0
+
+            # Sortera fallande så högsta offertnamnet (senaste) hamnar först
+            grouped_off_sorted = sorted(grouped_off, key=get_offert_num, reverse=True)
+
             off_options_map = {}
-            for off_nr, group in df_offert_curr.groupby("Offertnr", sort=False):
+            for off_nr, group in grouped_off_sorted:
                 kunder = group["Kund_Namn"].unique()
                 k_str = ", ".join([k for k in kunder if k.strip()]) or "Okänd kund"
                 label = f"{off_nr} – {k_str}"
