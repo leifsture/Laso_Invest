@@ -261,145 +261,556 @@ with tabs[0]:
       st.success("Registreringen har sparats!")
       st.rerun()
 
-# ------------------------------------------
-# FLIK 1: OFFERTER
-# ------------------------------------------
+# ==========================================
+# FLIK 1: REGISTRERA ARBETE
+# ==========================================
+with tabs[0]:
+    st.subheader("1. Kund & Fakturauppgifter")
+    
+    fc = st.session_state.get("form_counter", 0)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        k_namn = st.text_input("Kundnamn *", key=f"k_namn_{fc}")
+        k_orgnr = st.text_input("Personnr / Org.nr", key=f"k_orgnr_{fc}")
+        k_adress = st.text_input("Kund Adress", key=f"k_adress_{fc}")
+        k_postnr = st.text_input("Kund Postnr", key=f"k_postnr_{fc}")
+        k_ort = st.text_input("Kund Ort", key=f"k_ort_{fc}")
+
+    with col2:
+        f_namn = st.text_input("Fakturanamn (Om annan)", key=f"f_namn_{fc}")
+        f_adress = st.text_input("Fakturaadress", key=f"f_adress_{fc}")
+        f_postnr = st.text_input("Faktura Postnr", key=f"f_postnr_{fc}")
+        f_ort = st.text_input("Faktura Ort", key=f"f_ort_{fc}")
+
+    st.divider()
+    st.subheader("2. Lägg till artikel/åtgärd")
+
+    art_options = ["-- Välj artikel --"]
+    art_map = {}
+
+    for kat, group in df_art.groupby("Kategori", sort=False):
+        rubrik = f"─── 📂 {kat.upper()} ───"
+        art_options.append(rubrik)
+        for _, r in group.iterrows():
+            display_text = f"   {r['Artikel']} ({r['ArtPris']} kr)"
+            art_options.append(display_text)
+            art_map[display_text] = r
+
+    col_a, col_b, col_c, col_d = st.columns([2, 4, 2, 4])
+    with col_a:
+        datum_val = st.date_input("Datum", value=date.today(), key=f"datum_{fc}")
+    with col_b:
+        val_art = st.selectbox("Välj Artikel", options=art_options, index=0, key=f"art_{fc}")
+    with col_c:
+        antal_val = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key=f"antal_{fc}")
+    with col_d:
+        desc_val = st.text_input("Beskrivning (frivillig)", key=f"desc_{fc}")
+
+    if st.button("➕ Lägg till rad i underlag"):
+        if val_art == "-- Välj artikel --":
+            st.warning("Du måste välja en artikel från listan!")
+        elif val_art.startswith("───"):
+            st.warning("Det där är en kategorirubrik. Välj en artikel under rubriken!")
+        else:
+            art_row = art_map[val_art]
+            pris = float(art_row["ArtPris"].replace("kr", "").replace(" ", ""))
+            tot = float(antal_val) * pris
+
+            st.session_state.temp_items.append({
+                "Datum": str(datum_val),
+                "Artikelnr": art_row["Artikelnr"],
+                "Artikel": art_row["Artikel"],
+                "Kategori": art_row["Kategori"],
+                "Beskrivning": desc_val,
+                "Timmar": int(antal_val),
+                "Timpris": pris,
+                "Totalt": tot
+            })
+            st.success(f"Lade till: {art_row['Artikel']}")
+            st.rerun()
+
+    if st.session_state.temp_items:
+        st.markdown("### Tillagda rader för detta underlag:")
+        temp_df = pd.DataFrame(st.session_state.temp_items)
+        st.dataframe(temp_df[["Datum", "Artikelnr", "Artikel", "Beskrivning", "Timmar", "Timpris", "Totalt"]], use_container_width=True)
+
+        if st.button("❌ Töm underlagets rader"):
+            st.session_state.temp_items = []
+            st.rerun()
+
+        st.divider()
+        if st.button("💾 SPARA HELA UNDERLAGET TILL KUND", type="primary", use_container_width=True):
+            if not k_namn.strip():
+                st.error("Du måste fylla i Kundnamn!")
+            else:
+                start_id = 1
+                if not df_data.empty:
+                    try: start_id = int(pd.to_numeric(df_data["ID"]).max() + 1)
+                    except Exception: start_id = len(df_data) + 1
+
+                idag_str = str(date.today())
+                new_rows = []
+                for idx, item in enumerate(st.session_state.temp_items):
+                    new_rows.append({
+                        "ID": str(start_id + idx),
+                        "Datum": item["Datum"],
+                        "Skapad_Datum": idag_str,
+                        "Artikelnr": item["Artikelnr"],
+                        "Artikel": item["Artikel"],
+                        "Kategori": item["Kategori"],
+                        "Kund_OrgNr": k_orgnr,
+                        "Kund_Namn": k_namn,
+                        "Kund_Adress": k_adress,
+                        "Kund_Postnr": k_postnr,
+                        "Kund_Ort": k_ort,
+                        "Faktura_Namn": f_namn,
+                        "Faktura_Adress": f_adress,
+                        "Faktura_Postnr": f_postnr,
+                        "Faktura_Ort": f_ort,
+                        "Beskrivning": item["Beskrivning"],
+                        "Timmar": str(item["Timmar"]),
+                        "Timpris": str(item["Timpris"]),
+                        "Totalt": str(item["Timmar"] * item["Timpris"])
+                    })
+
+                df_data = pd.concat([df_data, pd.DataFrame(new_rows)], ignore_index=True)
+                save_data(df_data)
+                
+                st.session_state.temp_items = []
+                st.session_state.form_counter = st.session_state.get("form_counter", 0) + 1
+                st.success(f"Underlaget för {k_namn} har sparats och formuläret har rensats!")
+                st.rerun()
+
+# ==========================================
+# FLIK 2: OFFERTER
+# ==========================================
 with tabs[1]:
-  st.header("📑 Offertförfrågningar & Skapa offerter")
+    st.subheader("📑 Hantera & Skapa Offerter")
 
-  with st.form("offert_form", clear_on_submit=True):
-    col_o1, col_o2 = st.columns(2)
-    with col_o1:
-      offert_kund = st.text_input("Kund / Företag")
-      offert_adress = st.text_input("Gatuadress")
-      
-      col_op1, col_op2 = st.columns(2)
-      with col_op1:
-        offert_postnr = st.text_input("Postnummer")
-      with col_op2:
-        offert_ort = st.text_input("Ort")
+    sub_tab1, sub_tab2 = st.tabs(["➕ Skapa Ny Offert", "📋 Sparade Offerter"])
+
+    with sub_tab1:
+        st.markdown("#### 1. Offert- & Kundinformation")
         
-      offert_kategori = st.selectbox("Kategori", KATEGORIER, key="offert_kat")
-      offert_beskrivning = st.text_area("Offertbeskrivning / Omfattning")
+        ofc = st.session_state.get("offert_form_counter", 0)
 
-    with col_o2:
-      offert_summa_exkl = st.number_input("Beräknat belopp (exkl. moms)", min_value=0.0, step=500.0)
-      offert_status = st.selectbox("Status", ["Skapad", "Skickad", "Accepterad", "Avslagen"])
+        next_offert_nr = "OFF-1001"
+        if not df_offert.empty and "Offertnr" in df_offert.columns:
+            nums = df_offert["Offertnr"].str.replace("OFF-", "", regex=False)
+            nums_numeric = pd.to_numeric(nums, errors="coerce").dropna()
+            if not nums_numeric.empty:
+                next_offert_nr = f"OFF-{int(nums_numeric.max() + 1)}"
 
-    submit_offert = st.form_submit_button("Skapa offert", type="primary")
+        col_off1, col_off2 = st.columns(2)
+        
+        with col_off1:
+            off_k_namn = st.text_input("Kundnamn *", key=f"off_k_namn_{ofc}")
+            off_k_orgnr = st.text_input("Org.nr / Personnr", key=f"off_k_orgnr_{ofc}")
+            off_k_adress = st.text_input("Kund Adress", key=f"off_k_adress_{ofc}")
+            col_p, col_o = st.columns(2)
+            with col_p: off_k_post = st.text_input("Postnr", key=f"off_k_post_{ofc}")
+            with col_o: off_k_ort = st.text_input("Ort", key=f"off_k_ort_{ofc}")
 
-    if submit_offert:
-      offert_nr = f"OFF-{len(df_offerter) + 1001}"
-      moms = offert_summa_exkl * 0.25
-      totalt_inkl = offert_summa_exkl + moms
+        with col_off2:
+            offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key=f"offert_nr_{ofc}")
+            off_datum = st.date_input("Offertdatum", value=date.today(), key=f"off_datum_{ofc}")
+            off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key=f"off_giltig_{ofc}")
 
-      ny_offert = pd.DataFrame([{
-          "Offertnummer": offert_nr,
-          "Datum": str(date.today()),
-          "Kund": offert_kund,
-          "Adress": offert_adress,
-          "Postnummer": offert_postnr,
-          "Ort": offert_ort,
-          "Kategori": offert_kategori,
-          "Beskrivning": offert_beskrivning,
-          "Totalt_Exkl_Moms": offert_summa_exkl,
-          "Moms_25": moms,
-          "Totalt_Inkl_Moms": totalt_inkl,
-          "Status": offert_status,
-      }])
+        st.divider()
+        st.markdown("#### 2. Lägg till offertrader")
 
-      df_offerter = pd.concat([df_offerter, ny_offert], ignore_index=True)
-      save_data(df_offerter, OFFERT_FILE)
-      st.success(f"Offert {offert_nr} har skapats!")
-      st.rerun()
+        art_options_off = ["-- Välj artikel --"]
+        art_map_off = {}
 
-  st.subheader("📋 Befintliga offerter")
-  st.dataframe(df_offerter, use_container_width=True)
+        for kat, group in df_art.groupby("Kategori", sort=False):
+            art_options_off.append(f"─── 📂 {kat.upper()} ───")
+            for _, r in group.iterrows():
+                display_text = f"   {r['Artikel']} ({r['ArtPris']} kr)"
+                art_options_off.append(display_text)
+                art_map_off[display_text] = r
 
-# ------------------------------------------
-# FLIK 2: ARTIKELDATABAS
-# ------------------------------------------
+        col_oa, col_ob, col_oc = st.columns([4, 2, 4])
+        with col_oa:
+            val_off_art = st.selectbox("Välj Artikel/Tjänst", options=art_options_off, key=f"val_off_art_{ofc}")
+        with col_ob:
+            off_antal = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key=f"off_antal_{ofc}")
+        with col_oc:
+            off_desc = st.text_input("Beskrivning / Specifikation (Valfri)", key=f"off_desc_{ofc}")
+
+        if st.button("➕ Lägg till rad i offerten"):
+            if val_off_art == "-- Välj artikel --" or val_off_art.startswith("───"):
+                st.warning("Välj en giltig artikel ur listan!")
+            else:
+                art_row = art_map_off[val_off_art]
+                pris = float(art_row["ArtPris"].replace("kr", "").replace(" ", ""))
+                tot = int(off_antal) * pris
+
+                st.session_state.temp_offert_items.append({
+                    "Artikelnr": art_row["Artikelnr"],
+                    "Artikel": art_row["Artikel"],
+                    "Beskrivning": off_desc,
+                    "Antal": int(off_antal),
+                    "A_Pris": pris,
+                    "Totalt": tot
+                })
+                st.success(f"Lade till '{art_row['Artikel']}' i offerten.")
+                st.rerun()
+
+        if st.session_state.temp_offert_items:
+            st.markdown("##### Offertrader:")
+            st.caption("💡 *Ändra Antal direkt i tabellen så räknas Totalt om automatiskt.*")
+
+            off_df_temp = pd.DataFrame(st.session_state.temp_offert_items)
+            
+            off_df_temp["Antal"] = pd.to_numeric(off_df_temp["Antal"], errors="coerce").fillna(1).astype(int)
+            off_df_temp["A_Pris"] = pd.to_numeric(off_df_temp["A_Pris"], errors="coerce").fillna(0.0)
+            off_df_temp["Totalt"] = off_df_temp["Antal"] * off_df_temp["A_Pris"]
+
+            edited_off_df = st.data_editor(
+                off_df_temp,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Artikelnr": st.column_config.TextColumn("Artikelnr"),
+                    "Artikel": st.column_config.TextColumn("Artikel"),
+                    "Beskrivning": st.column_config.TextColumn("Beskrivning"),
+                    "Antal": st.column_config.NumberColumn("Antal/Timmar", step=1, format="%d"),
+                    "A_Pris": st.column_config.NumberColumn("A-pris", format="%.2f kr"),
+                    "Totalt": st.column_config.NumberColumn("Totalt", format="%.2f kr", disabled=True),
+                },
+                key=f"editor_temp_offert_{ofc}"
+            )
+
+            edited_off_df["Antal"] = pd.to_numeric(edited_off_df["Antal"], errors="coerce").fillna(1).astype(int)
+            edited_off_df["A_Pris"] = pd.to_numeric(edited_off_df["A_Pris"], errors="coerce").fillna(0.0)
+            edited_off_df["Totalt"] = edited_off_df["Antal"] * edited_off_df["A_Pris"]
+            
+            st.session_state.temp_offert_items = edited_off_df.to_dict(orient="records")
+
+            if st.button("❌ Töm alla offertrader"):
+                st.session_state.temp_offert_items = []
+                st.rerun()
+
+            st.divider()
+            if st.button("💾 SPARA OCH SKAPA OFFERT", type="primary", use_container_width=True):
+                if not off_k_namn.strip():
+                    st.error("Du måste fylla i Kundnamn!")
+                elif not st.session_state.temp_offert_items:
+                    st.error("Du har inga offertrader kvar i listan!")
+                else:
+                    new_off_rows = []
+                    for item in st.session_state.temp_offert_items:
+                        antal_int = int(float(item["Antal"]))
+                        apris_flt = float(item["A_Pris"])
+                        new_off_rows.append({
+                            "Offertnr": offert_nr,
+                            "Offertdatum": str(off_datum),
+                            "Giltig_Tom": str(off_giltig),
+                            "Kund_OrgNr": off_k_orgnr,
+                            "Kund_Namn": off_k_namn,
+                            "Kund_Adress": off_k_adress,
+                            "Kund_Postnr": off_k_post,
+                            "Kund_Ort": off_k_ort,
+                            "Artikelnr": item["Artikelnr"],
+                            "Artikel": item["Artikel"],
+                            "Beskrivning": item["Beskrivning"],
+                            "Antal": str(antal_int),
+                            "A_Pris": str(apris_flt),
+                            "Totalt": str(antal_int * apris_flt),
+                            "Status": "Skapad"
+                        })
+
+                    df_offert = pd.concat([df_offert, pd.DataFrame(new_off_rows)], ignore_index=True)
+                    save_offerter(df_offert)
+                    
+                    st.session_state.temp_offert_items = []
+                    st.session_state.offert_form_counter = st.session_state.get("offert_form_counter", 0) + 1
+                    
+                    st.success(f"Offert {offert_nr} till {off_k_namn} har sparats och formuläret har rensats!")
+                    st.rerun()
+
+    with sub_tab2:
+        df_offert_curr = load_offerter()
+        if df_offert_curr.empty:
+            st.info("Inga offerter har skapats ännu.")
+        else:
+            # Gruppera per offertnummer
+            grouped_off = list(df_offert_curr.groupby("Offertnr", sort=False))
+            
+            # Hjälpfunktion för att sortera fallande baserat på det numeriska värdet i "OFF-XXXX"
+            def get_offert_num(item):
+                off_nr = item[0]
+                num_part = str(off_nr).replace("OFF-", "")
+                try:
+                    return int(num_part)
+                except ValueError:
+                    return 0
+
+            # Sortera fallande så högsta offertnamnet (senaste) hamnar först
+            grouped_off_sorted = sorted(grouped_off, key=get_offert_num, reverse=True)
+
+            off_options_map = {}
+            for off_nr, group in grouped_off_sorted:
+                kunder = group["Kund_Namn"].unique()
+                k_str = ", ".join([k for k in kunder if k.strip()]) or "Okänd kund"
+                label = f"{off_nr} – {k_str}"
+                off_options_map[label] = off_nr
+
+            selected_label = st.selectbox("Välj Offert för utskrift/PDF:", options=list(off_options_map.keys()))
+            val_off_nr = off_options_map[selected_label]
+
+            selected_off_df = df_offert_curr[df_offert_curr["Offertnr"] == val_off_nr].copy()
+            selected_off_df["Antal_num"] = pd.to_numeric(selected_off_df["Antal"], errors="coerce").fillna(0)
+            selected_off_df["A_Pris_num"] = pd.to_numeric(selected_off_df["A_Pris"], errors="coerce").fillna(0)
+            selected_off_df["Totalt"] = (selected_off_df["Antal_num"] * selected_off_df["A_Pris_num"]).astype(str)
+
+            st.dataframe(selected_off_df[["Offertnr", "Offertdatum", "Kund_Namn", "Artikel", "Antal", "A_Pris", "Totalt"]], use_container_width=True)
+
+            offert_pdf_filename = f"Offert_{val_off_nr}_{selected_off_df.iloc[0]['Kund_Namn']}.pdf"
+
+            if st.button("📄 Skapa PDF-Offert", type="primary"):
+                if generate_offert_pdf(val_off_nr, selected_off_df, offert_pdf_filename):
+                    st.success("Offert-PDF skapad!")
+                    with open(offert_pdf_filename, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Ladda ner Offert PDF",
+                            data=f,
+                            file_name=offert_pdf_filename,
+                            mime="application/pdf"
+                        )
+
+# ==========================================
+# FLIK 3: ARTIKELDATABAS
+# ==========================================
 with tabs[2]:
-  st.header("📦 Artikel- & Prisdatabas")
+    st.subheader("📦 Hantera Artikeldatabas")
+    
+    col_tb1, col_tb2 = st.columns([2, 1])
+    with col_tb1:
+        st.markdown("#### Sparade artiklar (Redigera direkt i tabellen)")
+    with col_tb2:
+        if st.button("🔄 Återställ till standardartiklar"):
+            df_art = default_articles()
+            df_art["ArtPris"] = df_art["ArtPris"].apply(format_pris)
+            save_articles(df_art)
+            st.success("Artikeldatabasen har återställts!")
+            st.rerun()
 
-  with st.form("artikel_form", clear_on_submit=True):
-    col_art1, col_art2 = st.columns(2)
-    with col_art1:
-      art_nr = st.text_input("Artikelnummer")
-      art_namn = st.text_input("Artikelnamn / Tjänst (ex. Grävmaskin 15t)")
-    with col_art2:
-      art_enhet = st.selectbox("Enhet", ["timmar", "st", "m", "m2", "kg", "l"])
-      art_pris = st.number_input("A-pris / Timpris exkl. moms", min_value=0.0, step=50.0)
+    df_art_display = df_art.copy()
+    df_art_display["ArtPris"] = df_art_display["ArtPris"].apply(format_pris)
 
-    submit_art = st.form_submit_button("Spara artikel", type="primary")
+    edited_df = st.data_editor(
+        df_art_display,
+        use_container_width=True,
+        num_rows="dynamic",
+        height=450,
+        column_config={
+            "Kategori": st.column_config.SelectboxColumn("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], required=True),
+            "Artikelnr": st.column_config.TextColumn("Artikelnr", required=True),
+            "Artikel": st.column_config.TextColumn("Artikel / Benämning", required=True),
+            "ArtPris": st.column_config.TextColumn("Pris", help="Anges i heltal (t.ex. 1250 kr)", required=True),
+        },
+        key="editor_artiklar"
+    )
+
+    if st.button("💾 Spara alla ändringar i tabellen", type="primary"):
+        cleaned_df = edited_df[edited_df["Artikelnr"].astype(str).str.strip() != ""].copy()
+        cleaned_df["ArtPris"] = cleaned_df["ArtPris"].apply(format_pris)
+        
+        save_articles(cleaned_df)
+        st.success("Alla ändringar i artikeldatabasen har sparats!")
+        st.rerun()
+
+    st.divider()
+
+    st.markdown("#### Snabbformulär: Lägg till ny artikel")
+    with st.form("new_article_form"):
+        col_a1, col_a2, col_a3, col_a4 = st.columns([2, 2, 3, 2])
+        with col_a1:
+            new_cat = st.selectbox("Kategori", options=["Grävmaskin Volvo 50D", "Traktor Lundberg 6240", "Övrigt"], key="new_cat")
+        with col_a2:
+            new_nr = st.text_input("Artikelnr", key="new_nr")
+        with col_a3:
+            new_namn = st.text_input("Artikelnamn", key="new_namn")
+        with col_a4:
+            new_pris = st.text_input("Pris (t.ex. 1250)", key="new_pris")
+
+        submit_art = st.form_submit_button("➕ Lägg till ny artikel i listan")
 
     if submit_art:
-      ny_art = pd.DataFrame([{
-          "Artikelnummer": art_nr,
-          "Artikelnamn": art_namn,
-          "Enhet": art_enhet,
-          "A_Pris_Exkl_Moms": art_pris,
-      }])
+        if new_nr and new_namn and new_pris:
+            if not df_art[df_art["Artikelnr"] == new_nr].empty:
+                st.error(f"Artikelnr {new_nr} finns redan!")
+            else:
+                formatted_p = format_pris(new_pris)
+                new_row = pd.DataFrame([{"Kategori": new_cat, "Artikelnr": new_nr, "Artikel": new_namn, "ArtPris": formatted_p}])
+                df_art = pd.concat([df_art, new_row], ignore_index=True)
+                save_articles(df_art)
+                st.success(f"Artikeln '{new_namn}' lades till med priset {formatted_p}!")
+                st.rerun()
+        else:
+            st.warning("Fyll i alla fält för att lägga till en ny artikel.")
 
-      df_artiklar = pd.concat([df_artiklar, ny_art], ignore_index=True)
-      save_data(df_artiklar, ARTIKEL_FILE)
-      st.success("Artikeln har sparats!")
-      st.rerun()
-
-  st.subheader("📋 Artikellista")
-  st.dataframe(df_artiklar, use_container_width=True)
-
-# ------------------------------------------
-# FLIK 3: REDIGERA / TA BORT
-# ------------------------------------------
+# ==========================================
+# FLIK 4: REDIGERA / TA BORT POSTER
+# ==========================================
 with tabs[3]:
-  st.header("✏️ Hantera och redigera registrerad data")
+    st.subheader("✏️ Redigera / Ta bort registrerade poster")
 
-  if not df_arbeid.empty:
-    st.dataframe(df_arbeid, use_container_width=True)
+    df_data_current = load_data()
 
-    rad_index = st.number_input(
-        "Välj radindex att ta bort",
-        min_value=0,
-        max_value=len(df_arbeid) - 1,
-        step=1,
-    )
-    if st.button("❌ Ta bort vald rad", type="secondary"):
-      df_arbeid = df_arbeid.drop(index=rad_index).reset_index(drop=True)
-      save_data(df_arbeid, DATA_FILE)
-      st.success("Raden har tagits bort!")
-      st.rerun()
-  else:
-    st.info("Inga registreringar finns ännu.")
+    if df_data_current.empty:
+        st.info("Inga poster sparade ännu.")
+    else:
+        edited_data = st.data_editor(
+            df_data_current,
+            use_container_width=True,
+            num_rows="dynamic",
+            height=500,
+            column_config={
+                "ID": st.column_config.TextColumn("ID", disabled=True),
+                "Datum": st.column_config.TextColumn("Utförandedatum", required=True),
+                "Skapad_Datum": st.column_config.TextColumn("Skapad i systemet", disabled=True),
+                "Kund_Namn": st.column_config.TextColumn("Kundnamn", required=True),
+                "Artikelnr": st.column_config.TextColumn("Artikelnr"),
+                "Artikel": st.column_config.TextColumn("Artikel"),
+                "Beskrivning": st.column_config.TextColumn("Beskrivning"),
+                "Timmar": st.column_config.NumberColumn("Timmar/Antal", step=1, format="%d"),
+                "Timpris": st.column_config.TextColumn("A-pris"),
+                "Totalt": st.column_config.TextColumn("Totalt (kr)"),
+            },
+            key="editor_registrerade_poster"
+        )
 
-# ------------------------------------------
-# FLIK 4: FAKTURAUNDERLAG
-# ------------------------------------------
+        edited_data["Timmar_num"] = pd.to_numeric(edited_data["Timmar"], errors="coerce").fillna(0)
+        edited_data["Timpris_num"] = pd.to_numeric(edited_data["Timpris"], errors="coerce").fillna(0)
+        edited_data["Totalt"] = (edited_data["Timmar_num"] * edited_data["Timpris_num"]).astype(str)
+        edited_data = edited_data.drop(columns=["Timmar_num", "Timpris_num"], errors="ignore")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("💾 Spara alla ändringar i databasen", type="primary"):
+            save_data(edited_data)
+            st.success("Databasen har uppdaterats och sparats!")
+            st.rerun()
+
+# ==========================================
+# FLIK 5: FAKTURAUNDERLAG (PDF) & E-POST
+# ==========================================
 with tabs[4]:
-  st.header("📄 Skapa fakturaunderlag")
+    st.subheader("Skapa PDF-Fakturaunderlag & Skicka E-post")
+    
+    if os.path.exists(DATA_FILE):
+        df_pdf = pd.read_csv(DATA_FILE, dtype=str).fillna("")
+    else:
+        df_pdf = pd.DataFrame(columns=DATA_COLUMNS)
 
-  if not df_arbeid.empty:
-    kunder = list(df_arbeid["Kund"].dropna().unique())
-    valdh_kund = st.selectbox("Välj kund för sammanställning", kunder)
+    if df_pdf.empty:
+        st.info("Inga registrerade underlag finns ännu.")
+    else:
+        if "Skapad_Datum" not in df_pdf.columns:
+            df_pdf["Skapad_Datum"] = df_pdf["Datum"]
 
-    kund_df = df_arbeid[df_arbeid["Kund"] == valdh_kund]
+        df_pdf["Kund_Namn_Clean"] = df_pdf["Kund_Namn"].str.strip()
+        df_pdf_valid = df_pdf[df_pdf["Kund_Namn_Clean"] != ""].copy()
 
-    st.subheader(f"Underlag för: {valdh_kund}")
-    st.dataframe(kund_df, use_container_width=True)
+        if df_pdf_valid.empty:
+            st.warning("Hittade inga kunder i databasen.")
+        else:
+            kund_summary = (
+                df_pdf_valid.groupby("Kund_Namn_Clean")
+                .agg(
+                    Senaste_Skapad=("Skapad_Datum", "max"),
+                    Max_ID=("ID", lambda x: pd.to_numeric(x, errors="coerce").max())
+                )
+                .reset_index()
+            )
 
-    tot_exkl = float(pd.to_numeric(kund_df["Totalt_Exkl_Moms"], errors="coerce").sum())
-    tot_moms = float(pd.to_numeric(kund_df["Moms_25"], errors="coerce").sum())
-    tot_inkl = float(pd.to_numeric(kund_df["Totalt_Inkl_Moms"], errors="coerce").sum())
+            kund_summary = kund_summary.sort_values(
+                by=["Senaste_Skapad", "Max_ID"], ascending=[False, False]
+            )
 
-    m_col1, m_col2, m_col3 = st.columns(3)
-    m_col1.metric("Totalt exkl. moms", f"{tot_exkl:.2f} kr")
-    m_col2.metric("Moms (25%)", f"{tot_moms:.2f} kr")
-    m_col3.metric("Totalt inkl. moms", f"{tot_inkl:.2f} kr")
-  else:
-    st.info("Det finns inget underlag att visa.")
+            options_map = {}
+            for _, row in kund_summary.iterrows():
+                k_name = row["Kund_Namn_Clean"]
+                d_str = row["Senaste_Skapad"]
+                label = f"{k_name} ({d_str})" if d_str else k_name
+                options_map[label] = k_name
 
+            selected_label = st.radio(
+                "Välj kund för fakturaunderlag:",
+                options=list(options_map.keys()),
+                key="radio_kund_pdf"
+            )
+
+            val_kund = options_map[selected_label]
+            kund_df = df_pdf_valid[df_pdf_valid["Kund_Namn_Clean"] == val_kund]
+
+            st.write(f"**Antal rader för {val_kund}:** {len(kund_df)}")
+            pdf_filename = f"Fakturaunderlag_{val_kund}_{date.today()}.pdf"
+
+            st.divider()
+            
+            if st.button("📄 Generera PDF-Fakturaunderlag", type="primary"):
+                if generate_pdf_file(val_kund, kund_df, pdf_filename):
+                    st.success(f"PDF skapades för {val_kund}!")
+                    with open(pdf_filename, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Ladda ner PDF",
+                            data=f,
+                            file_name=pdf_filename,
+                            mime="application/pdf"
+                        )
+
+            st.divider()
+            st.subheader("✉️ Skicka underlag via E-post")
+            
+            with st.form("email_form"):
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    epost_avsandare = st.text_input("Din Gmail-adress (Avsändare)", value="")
+                    epost_losen = st.text_input("Ditt App-lösenord (Gmail)", type="password", help="Krävs för Gmail SMTP")
+                with col_e2:
+                    epost_mottagare = st.text_input("Mottagarens E-postadress")
+                    epost_amne = st.text_input("Ämne", value=f"Fakturaunderlag - {val_kund}")
+
+                epost_meddelande = st.text_area("Meddelande", value=f"Hej!\n\nHär kommer fakturaunderlaget för {val_kund}.\n\nMed vänlig hälsning,\nLaso Invest AB")
+
+                submit_email = st.form_submit_button("✉️ Skicka E-post med PDF")
+
+            if submit_email:
+                if not os.path.exists(pdf_filename):
+                    generate_pdf_file(val_kund, kund_df, pdf_filename)
+
+                if not epost_avsandare or not epost_losen or not epost_mottagare:
+                    st.error("Fyll i avsändare, lösenord och mottagare!")
+                else:
+                    try:
+                        msg = MIMEMultipart()
+                        msg['From'] = epost_avsandare
+                        msg['To'] = epost_mottagare
+                        msg['Subject'] = epost_amne
+                        msg.attach(MIMEText(epost_meddelande, 'plain'))
+
+                        with open(pdf_filename, "rb") as attachment:
+                            part = MIMEBase('application', 'octet-stream')
+                            part.set_payload(attachment.read())
+                            encoders.encode_base64(part)
+                            part.add_header('Content-Disposition', f"attachment; filename= {pdf_filename}")
+                            msg.attach(part)
+
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login(epost_avsandare, epost_losen)
+                        server.send_message(msg)
+                        server.quit()
+
+                        st.success(f"E-post skickades framgångsrikt till {epost_mottagare}!")
+                    except Exception as e:
+                        st.error(f"Kunde inte skicka e-post: {e}")
 # ------------------------------------------
-# FLIK 5: ADMIN & ANVÄNDARHANTERING (ENDAST ADMIN)
+# FLIK 6: ADMIN & ANVÄNDARHANTERING (ENDAST ADMIN)
 # ------------------------------------------
 if st.session_state.user_role == "admin":
   with tabs[5]:
