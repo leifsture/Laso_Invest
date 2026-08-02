@@ -353,6 +353,9 @@ if "temp_offert_items" not in st.session_state:
 if "form_counter" not in st.session_state:
     st.session_state.form_counter = 0
 
+if "offert_form_counter" not in st.session_state:
+    st.session_state.offert_form_counter = 0
+
 df_data = load_data()
 df_art = load_articles()
 df_offert = load_offerter()
@@ -367,8 +370,7 @@ tabs = st.tabs(["➕ Registrera arbete", "📑 Offerter", "📦 Artikeldatabas",
 with tabs[0]:
     st.subheader("1. Kund & Fakturauppgifter")
     
-    # Använd form_counter i key för att tvinga fram ett rent formulär vid sparande
-    fc = st.session_state.form_counter
+    fc = st.session_state.get("form_counter", 0)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -478,9 +480,8 @@ with tabs[0]:
                 df_data = pd.concat([df_data, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df_data)
                 
-                # Nollställ allt genom att räkna upp räknaren och tömma tillfälliga rader
                 st.session_state.temp_items = []
-                st.session_state.form_counter += 1
+                st.session_state.form_counter = st.session_state.get("form_counter", 0) + 1
                 st.success(f"Underlaget för {k_namn} har sparats och formuläret har rensats!")
                 st.rerun()
 
@@ -495,8 +496,7 @@ with tabs[1]:
     with sub_tab1:
         st.markdown("#### 1. Offert- & Kundinformation")
         
-        # Dynamisk nyckel för att tömma alla fält vid sparande
-        ofc = st.session_state.offert_form_counter
+        ofc = st.session_state.get("offert_form_counter", 0)
 
         next_offert_nr = "OFF-1001"
         if not df_offert.empty and "Offertnr" in df_offert.columns:
@@ -627,9 +627,8 @@ with tabs[1]:
                     df_offert = pd.concat([df_offert, pd.DataFrame(new_off_rows)], ignore_index=True)
                     save_offerter(df_offert)
                     
-                    # Nollställ offertrader och tvinga omritning av formuläret
                     st.session_state.temp_offert_items = []
-                    st.session_state.offert_form_counter += 1
+                    st.session_state.offert_form_counter = st.session_state.get("offert_form_counter", 0) + 1
                     
                     st.success(f"Offert {offert_nr} till {off_k_namn} har sparats och formuläret har rensats!")
                     st.rerun()
@@ -639,7 +638,6 @@ with tabs[1]:
         if df_offert_curr.empty:
             st.info("Inga offerter har skapats ännu.")
         else:
-            # Skapa en mappning för rullgardinsmenyn: "OFF-1001 – Kundnamn" -> "OFF-1001"
             off_options_map = {}
             for off_nr, group in df_offert_curr.groupby("Offertnr", sort=False):
                 kunder = group["Kund_Namn"].unique()
