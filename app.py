@@ -495,6 +495,9 @@ with tabs[1]:
     with sub_tab1:
         st.markdown("#### 1. Offert- & Kundinformation")
         
+        # Dynamisk nyckel för att tömma alla fält vid sparande
+        ofc = st.session_state.offert_form_counter
+
         next_offert_nr = "OFF-1001"
         if not df_offert.empty and "Offertnr" in df_offert.columns:
             nums = df_offert["Offertnr"].str.replace("OFF-", "", regex=False)
@@ -505,17 +508,17 @@ with tabs[1]:
         col_off1, col_off2 = st.columns(2)
         
         with col_off1:
-            off_k_namn = st.text_input("Kundnamn *", key="off_k_namn")
-            off_k_orgnr = st.text_input("Org.nr / Personnr", key="off_k_orgnr")
-            off_k_adress = st.text_input("Kund Adress", key="off_k_adress")
+            off_k_namn = st.text_input("Kundnamn *", key=f"off_k_namn_{ofc}")
+            off_k_orgnr = st.text_input("Org.nr / Personnr", key=f"off_k_orgnr_{ofc}")
+            off_k_adress = st.text_input("Kund Adress", key=f"off_k_adress_{ofc}")
             col_p, col_o = st.columns(2)
-            with col_p: off_k_post = st.text_input("Postnr", key="off_k_post")
-            with col_o: off_k_ort = st.text_input("Ort", key="off_k_ort")
+            with col_p: off_k_post = st.text_input("Postnr", key=f"off_k_post_{ofc}")
+            with col_o: off_k_ort = st.text_input("Ort", key=f"off_k_ort_{ofc}")
 
         with col_off2:
-            offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key="offert_nr")
-            off_datum = st.date_input("Offertdatum", value=date.today(), key="off_datum")
-            off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key="off_giltig")
+            offert_nr = st.text_input("Offertnummer", value=next_offert_nr, key=f"offert_nr_{ofc}")
+            off_datum = st.date_input("Offertdatum", value=date.today(), key=f"off_datum_{ofc}")
+            off_giltig = st.date_input("Giltig t.o.m.", value=date.today() + timedelta(days=30), key=f"off_giltig_{ofc}")
 
         st.divider()
         st.markdown("#### 2. Lägg till offertrader")
@@ -532,11 +535,11 @@ with tabs[1]:
 
         col_oa, col_ob, col_oc = st.columns([4, 2, 4])
         with col_oa:
-            val_off_art = st.selectbox("Välj Artikel/Tjänst", options=art_options_off, key="val_off_art")
+            val_off_art = st.selectbox("Välj Artikel/Tjänst", options=art_options_off, key=f"val_off_art_{ofc}")
         with col_ob:
-            off_antal = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key="off_antal")
+            off_antal = st.number_input("Antal/Timmar", min_value=1, value=1, step=1, key=f"off_antal_{ofc}")
         with col_oc:
-            off_desc = st.text_input("Beskrivning / Specifikation (Valfri)", key="off_desc")
+            off_desc = st.text_input("Beskrivning / Specifikation (Valfri)", key=f"off_desc_{ofc}")
 
         if st.button("➕ Lägg till rad i offerten"):
             if val_off_art == "-- Välj artikel --" or val_off_art.startswith("───"):
@@ -579,7 +582,7 @@ with tabs[1]:
                     "A_Pris": st.column_config.NumberColumn("A-pris", format="%.2f kr"),
                     "Totalt": st.column_config.NumberColumn("Totalt", format="%.2f kr", disabled=True),
                 },
-                key="editor_temp_offert"
+                key=f"editor_temp_offert_{ofc}"
             )
 
             edited_off_df["Antal"] = pd.to_numeric(edited_off_df["Antal"], errors="coerce").fillna(1).astype(int)
@@ -623,8 +626,12 @@ with tabs[1]:
 
                     df_offert = pd.concat([df_offert, pd.DataFrame(new_off_rows)], ignore_index=True)
                     save_offerter(df_offert)
+                    
+                    # Nollställ offertrader och tvinga omritning av formuläret
                     st.session_state.temp_offert_items = []
-                    st.success(f"Offert {offert_nr} till {off_k_namn} har sparats!")
+                    st.session_state.offert_form_counter += 1
+                    
+                    st.success(f"Offert {offert_nr} till {off_k_namn} har sparats och formuläret har rensats!")
                     st.rerun()
 
     with sub_tab2:
@@ -632,8 +639,16 @@ with tabs[1]:
         if df_offert_curr.empty:
             st.info("Inga offerter har skapats ännu.")
         else:
-            off_lista = df_offert_curr["Offertnr"].unique().tolist()
-            val_off_nr = st.selectbox("Välj Offert för utskrift/PDF:", options=off_lista)
+            # Skapa en mappning för rullgardinsmenyn: "OFF-1001 – Kundnamn" -> "OFF-1001"
+            off_options_map = {}
+            for off_nr, group in df_offert_curr.groupby("Offertnr", sort=False):
+                kunder = group["Kund_Namn"].unique()
+                k_str = ", ".join([k for k in kunder if k.strip()]) or "Okänd kund"
+                label = f"{off_nr} – {k_str}"
+                off_options_map[label] = off_nr
+
+            selected_label = st.selectbox("Välj Offert för utskrift/PDF:", options=list(off_options_map.keys()))
+            val_off_nr = off_options_map[selected_label]
 
             selected_off_df = df_offert_curr[df_offert_curr["Offertnr"] == val_off_nr].copy()
             selected_off_df["Antal_num"] = pd.to_numeric(selected_off_df["Antal"], errors="coerce").fillna(0)
