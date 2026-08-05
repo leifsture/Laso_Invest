@@ -1,4 +1,4 @@
 @echo off
-cd /d "C:\Users\ÄGARE\OneDrive\Lars_2026\Faktura"
+cd /d "%~dp0"
 python -m streamlit run app.py
 pause
